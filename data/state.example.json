@@ -1,0 +1,13 @@
+{
+  "profile": {
+    "waking_hours": {
+      "wake": "08:00",
+      "sleep": "23:30"
+    },
+    "fixed_commitments": [],
+    "preferred_study_windows": [],
+    "daily_capacity_hours": 4
+  },
+  "items": [],
+  "plans": []
+}

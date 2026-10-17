@@ -1,0 +1,43 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Desk//Sample Calendar//EN
+X-WR-CALNAME:Sample term
+X-WR-TIMEZONE:America/Los_Angeles
+BEGIN:VEVENT
+UID:event-assignment-1001@example.edu
+DTSTART:20261024T060000Z
+SUMMARY:HW3: SQL queries and joins [CSE 414 A Au 26]
+DESCRIPTION:Write SQL for problems 1 to 5.
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-2002@example.edu
+DTSTART;TZID=America/Los_Angeles:20261022T180000
+SUMMARY:MATH 207 Midterm Exam
+DESCRIPTION:Bring a calculator.\nRoom to be announced\, check
+  the syllabus.
+END:VEVENT
+BEGIN:VEVENT
+UID:oh-3005@example.edu
+DTSTART;TZID=America/Los_Angeles:20261027T140000
+SUMMARY:CSE 414 office hours
+DESCRIPTION:Sieg 3rd floor.
+END:VEVENT
+BEGIN:VEVENT
+UID:lab-3004@example.edu
+DTSTART;TZID=America/Los_Angeles:20261028T170000
+SUMMARY:CSE 414 Lab 4
+DESCRIPTION:B+ trees worksheet.
+END:VEVENT
+BEGIN:VEVENT
+UID:quiz-3003@example.edu
+DTSTART;TZID=America/Los_Angeles:20261102T100000
+SUMMARY:CSE 414 Quiz 2
+DESCRIPTION:Relational algebra and indexes.
+END:VEVENT
+BEGIN:VEVENT
+UID:essay-3006@example.edu
+DTSTART;TZID=America/Los_Angeles:20261106T235900
+SUMMARY:INFO 200 Essay draft
+DESCRIPTION:1200 words, working thesis in the first paragraph.
+END:VEVENT
+END:VCALENDAR

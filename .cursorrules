@@ -1,0 +1,31 @@
+# Desk
+
+Student deadline desk. No login. No database. One JSON file.
+
+## Layout
+
+- `backend/` is FastAPI. Run it with `uvicorn main:app --app-dir backend --port 8741`.
+- `backend/ical_parser.py` is the iCal parser. Extend call sites around it. Do not rewrite `parse_ical`, the type rules, or the shipped examples.
+- `frontend/` is Next.js. It proxies `/api/*` to the backend.
+- `data/state.json` is the only persistence. It is created on first run and is gitignored.
+- `data/sample-calendar.ics` is the demo feed behind "Load sample calendar".
+- `data/state.example.json` shows the empty document shape.
+
+## Model
+
+Stored in `data/state.json`:
+
+- `profile`: waking hours (`wake`, `sleep` as HH:MM on the same day), `fixed_commitments` (id, title, course, day, start, end), `preferred_study_windows` (day, start, end), `daily_capacity_hours`.
+- `items`: id, title, course, type (`assignment`, `quiz`, `exam`, `event`, `personal`), `due_or_start`, source (`canvas`, `voice`, `manual`), `estimated_effort_hours`, `locked`, status (`open`, `done`), plus `description` carried from the feed.
+- `plans`: `week_start` (Monday), `blocks`, `version`, `previous_version`, `change_log`.
+- A block has id, `item_id` (the linked item, or null), start, end, kind (`study`, `fixed`, `personal`, `buffer`), status (`scheduled`, `done`, `skipped`), reason.
+
+Versions are per week. Posting a plan appends a new version and points `previous_version` at the previous one.
+
+## Rules
+
+- Time zone is America/Los_Angeles. Weeks start Monday. A naive datetime from the form is Pacific wall time.
+- Exam and midterm titles classify as `exam` and are locked. Re-import keeps effort and status for an existing id.
+- Feed imports use source `canvas`. Typed deadlines use source `manual`. `voice` is a stored source with no capture UI yet.
+- Do not add login, accounts, or a database.
+- Keep the frontend on shadcn/ui primitives already in `frontend/src/components/ui`.
