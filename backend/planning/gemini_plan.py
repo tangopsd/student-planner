@@ -75,16 +75,18 @@ def plan_week(
     text = request.strip()
     if not text:
         raise GeminiError("Say what you want planned", 400)
+    items = store.items()
+    target = _require_monday(week_start) if week_start else choose_week_start(items).isoformat()
+    if model is None and not os.environ.get("GEMINI_API_KEY", "").strip():
+        from planning.local_plan import plan_locally
+
+        return plan_locally(store, target)
     if model is None:
-        if not os.environ.get("GEMINI_API_KEY", "").strip():
-            raise GeminiError("Set GEMINI_API_KEY to plan with Gemini.", 400)
         model = GoogleGeminiModel()
 
-    items = store.items()
     profile = store.profile()
     original_ids = {item.id for item in items}
     locked_baseline = {item.id: item.due_or_start for item in items if item.locked}
-    target = _require_monday(week_start) if week_start else choose_week_start(items).isoformat()
     context = ToolContext(store, locked_baseline, original_ids)
     transcript: list[dict] = [
         {"role": "user", "text": _prompt(text, target, profile, items)}

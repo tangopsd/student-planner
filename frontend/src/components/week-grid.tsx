@@ -116,11 +116,17 @@ export function WeekPlanner({ items }: { items: Item[] }) {
       );
       setWeekStart(result.week_start);
       setRemote(result.plan);
+      setLoaded(true);
       setErrors(result.errors);
       setNote(result.message || null);
       if (!result.valid) {
-        setError("Gemini could not produce a valid week. The problems are listed below.");
+        setError(
+          result.plan?.blocks?.length
+            ? "Some of these blocks still break the rules."
+            : "No study blocks were placed for this week.",
+        );
       }
+      document.getElementById("week-grid")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not plan the week.");
     } finally {
@@ -153,15 +159,16 @@ export function WeekPlanner({ items }: { items: Item[] }) {
       <CardContent className="grid gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
-            The backend reads GEMINI_API_KEY. Existing deadlines stay put.
-            {remote ? ` Version ${remote.version}.` : ""}
+            {remote && remote.blocks.length > 0
+              ? `${remote.blocks.length} blocks on this week. Deadlines already on the desk stay put.`
+              : "No blocks yet. Plan this week to place study time around the deadlines already on the desk."}
           </p>
           <Button type="button" onClick={onPlan} disabled={busy}>
             {busy ? "Planning…" : "Plan this week"}
           </Button>
         </div>
         {error ? (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="rounded-lg border border-destructive/40 bg-card px-3 py-2 text-sm text-destructive">
             {error}
           </p>
         ) : null}
@@ -173,12 +180,12 @@ export function WeekPlanner({ items }: { items: Item[] }) {
           </ul>
         ) : null}
         {note ? <p className="line-clamp-3 text-sm text-muted-foreground">{note}</p> : null}
-        {!loaded ? (
+        {!loaded && !remote ? (
           <p role="status" className="text-sm text-muted-foreground">
             Loading the week…
           </p>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-7">
+          <div id="week-grid" className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
             {days.map((day) => {
               const label = dayLabel(day);
               const blocks = [...(byDay.get(day) ?? [])].sort((left, right) =>
@@ -204,8 +211,10 @@ export function WeekPlanner({ items }: { items: Item[] }) {
                             key={block.id}
                             className={
                               block.status === "skipped"
-                                ? "rounded-md bg-muted px-2 py-1.5 opacity-60"
-                                : "rounded-md bg-muted px-2 py-1.5"
+                                ? "rounded-md border-l-2 border-foreground/30 bg-muted px-2 py-1.5 opacity-60"
+                                : block.kind === "study"
+                                  ? "rounded-md border-l-2 border-primary bg-muted px-2 py-1.5"
+                                  : "rounded-md border-l-2 border-foreground/40 bg-muted px-2 py-1.5"
                             }
                           >
                             <p className="text-xs text-muted-foreground">

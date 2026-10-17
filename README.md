@@ -31,11 +31,9 @@ If you have no feed yet, use **Load sample calendar** or **Add by hand**.
 
 ## Weekly plan
 
-Set `GEMINI_API_KEY` in the environment before starting the backend. `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
+Set `GEMINI_API_KEY` before starting the backend to plan with Gemini. `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
 
-`POST /api/plan/gemini` sends the deadlines and profile already in `data/state.json` to Gemini, runs the tool calls, and checks the week. If the plan is invalid it retries once. The page shows that week under **Weekly plan**. **Plan this week** asks for blocks around the deadlines already on the desk. It does not regenerate them.
-
-Without `GEMINI_API_KEY` the endpoint returns 400 and leaves the file unchanged.
+`POST /api/plan/gemini` schedules the deadlines already in `data/state.json`. With a key, Gemini calls the planner tools and the validator retries once. Without a key, the desk still builds that week locally from the same deadlines. **Plan this week** shows the blocks in the day columns. It does not regenerate the deadlines.
 
 ## Tests
 

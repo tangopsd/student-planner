@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 from models import Block, Commitment, Item, Plan, Profile, WakingHours
-from planning.gemini_plan import GeminiError, ModelTurn, choose_week_start, plan_week
+from planning.gemini_plan import ModelTurn, choose_week_start, plan_week
 from planning.tools import TOOL_NAMES, ToolContext, execute_tool
 from planning.validator import validate_week
 from store import Store, StoreError
@@ -475,13 +475,53 @@ def test_retry_keeps_existing_items_and_repairs_the_week(tmp_path, monkeypatch):
     assert stored["exam-1"].due_or_start == exam.due_or_start
 
 
-def test_missing_api_key_refuses_before_a_request(tmp_path, monkeypatch):
+def test_missing_api_key_schedules_existing_items(tmp_path, monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     store = Store(tmp_path / "state.json")
-    with pytest.raises(GeminiError) as caught:
-        plan_week(store, "Plan the week")
-    assert caught.value.status_code == 400
-    assert "GEMINI_API_KEY" in str(caught.value)
+    exam = make_item(
+        id="exam-1",
+        title="Midterm",
+        type="exam",
+        locked=True,
+        estimated_effort_hours=None,
+        due_or_start="2026-10-26T15:30:00-07:00",
+    )
+    event = make_item(
+        id="class-1",
+        title="Five in a row",
+        type="event",
+        due_or_start="2026-10-20T15:30:00-07:00",
+        estimated_effort_hours=None,
+    )
+    store.add_item(exam)
+    store.add_item(event)
+    store.add_item(make_item(due_or_start="2026-10-23T18:00:00-07:00"))
+    store.add_item(
+        make_item(
+            id="midnight-1",
+            title="Assignment 2",
+            due_or_start="2026-10-21T00:00:00-07:00",
+            estimated_effort_hours=None,
+        )
+    )
+    result = plan_week(store, "Plan the week", week_start="2026-10-19")
+    assert result["valid"] is True, result["errors"]
+    assert result["week_start"] == "2026-10-19"
+    blocks = result["plan"].blocks
+    assert blocks
+    by_item: dict[str, list] = {}
+    for block in blocks:
+        by_item.setdefault(block.item_id, []).append(block)
+    assert any(block.kind == "study" for block in by_item["hw-1"])
+    assert any(block.kind == "study" for block in by_item["midnight-1"])
+    assert by_item["class-1"][0].kind == "fixed"
+    assert "exam-1" not in by_item
+    stored = {item.id: item for item in store.items()}
+    assert set(stored) == {"hw-1", "exam-1", "class-1", "midnight-1"}
+    assert stored["exam-1"].locked is True
+    assert stored["exam-1"].due_or_start == exam.due_or_start
+    again = plan_week(store, "Plan the week", week_start="2026-10-19")
+    assert [block.id for block in again["plan"].blocks] == [block.id for block in blocks]
 
 
 def test_gemini_endpoint_keeps_items_without_a_key(client, monkeypatch):
@@ -490,11 +530,17 @@ def test_gemini_endpoint_keeps_items_without_a_key(client, monkeypatch):
         "/api/items",
         json={"title": "HW1", "type": "assignment", "due_or_start": "2026-10-23T18:00"},
     ).json()
-    response = client.post("/api/plan/gemini", json={"request": "Plan the week"})
-    assert response.status_code == 400
-    assert "GEMINI_API_KEY" in response.json()["detail"]
+    response = client.post(
+        "/api/plan/gemini",
+        json={"request": "Plan the week", "week_start": "2026-10-19"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is True
+    assert body["plan"]["blocks"]
+    assert body["plan"]["blocks"][0]["item_id"] == created["id"]
     assert client.get("/api/items").json()[0]["id"] == created["id"]
-    assert client.get("/api/plans").json() == []
+    assert len(client.get("/api/items").json()) == 1
 
 
 def test_gemini_endpoint_returns_the_planner_result(client, monkeypatch):
