@@ -49,9 +49,9 @@ export function ImportPanel({ onImported }: { onImported: () => Promise<void> })
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Bring in a calendar</CardTitle>
+        <CardTitle>Import Canvas feed</CardTitle>
         <CardDescription>
-          Paste a Canvas or other iCal link, or drop a .ics file. Exams and midterms stay locked.
+          Paste a Canvas iCal link, or drop a .ics file. Exams and midterms stay locked.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -68,7 +68,7 @@ export function ImportPanel({ onImported }: { onImported: () => Promise<void> })
             void run("url", () => importUrl(trimmed));
           }}
         >
-          <Label htmlFor="feed-url">Calendar feed URL</Label>
+          <Label htmlFor="feed-url">Canvas feed URL</Label>
           <Input
             id="feed-url"
             type="url"
@@ -79,7 +79,7 @@ export function ImportPanel({ onImported }: { onImported: () => Promise<void> })
             disabled={busy !== null}
           />
           <Button type="submit" disabled={busy !== null}>
-            {busy === "url" ? "Importing…" : "Import feed"}
+            {busy === "url" ? "Importing…" : "Import Canvas feed"}
           </Button>
         </form>
 

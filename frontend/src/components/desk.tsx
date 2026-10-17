@@ -109,21 +109,23 @@ export function Desk() {
           </div>
         ) : null}
 
+        <div className="mb-6">
+          <ImportPanel
+            onImported={async () => {
+              await refreshWeeks();
+            }}
+          />
+        </div>
+
         {loading ? (
           <div role="status" className="grid gap-3" aria-label="Loading deadlines">
             <p className="text-sm text-muted-foreground">Loading deadlines…</p>
-            <div className="h-24 animate-pulse rounded-xl bg-muted" />
             <div className="h-24 animate-pulse rounded-xl bg-muted" />
             <div className="h-24 animate-pulse rounded-xl bg-muted" />
           </div>
         ) : (
           <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
             <div className="grid gap-6">
-              <ImportPanel
-                onImported={async () => {
-                  await refreshWeeks();
-                }}
-              />
               <ManualForm onCreated={refreshWeeks} />
               {profile ? (
                 <HoursPanel key={profileVersion} profile={profile} onSaved={setProfile} />
