@@ -18,6 +18,7 @@ Stored in `data/state.json`:
 - `profile`: waking hours (`wake`, `sleep` as HH:MM on the same day), `fixed_commitments` (id, title, course, day, start, end), `preferred_study_windows` (day, start, end), `daily_capacity_hours`.
 - `items`: id, title, course, type (`assignment`, `quiz`, `exam`, `event`, `personal`), `due_or_start`, source (`canvas`, `voice`, `manual`), `estimated_effort_hours`, `locked`, status (`open`, `done`), plus `description` carried from the feed.
 - `plans`: `week_start` (Monday), `blocks`, `version`, `previous_version`, `change_log`.
+- `undo_stack`: snapshots of profile, items, and plans from before each planner change. The stack itself is not part of a snapshot.
 - A block has id, `item_id` (the linked item, or null), start, end, kind (`study`, `fixed`, `personal`, `buffer`), status (`scheduled`, `done`, `skipped`), reason.
 
 Versions are per week. Posting a plan appends a new version and points `previous_version` at the previous one.
@@ -29,3 +30,11 @@ Versions are per week. Posting a plan appends a new version and points `previous
 - Feed imports use source `canvas`. Typed deadlines use source `manual`. `voice` is a stored source with no capture UI yet.
 - Do not add login, accounts, or a database.
 - Keep the frontend on shadcn/ui primitives already in `frontend/src/components/ui`.
+
+## Planning
+
+Gemini planning lives in `backend/planning/`. `POST /api/plan/gemini` reads `GEMINI_API_KEY`. `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
+
+Tools: `list_items`, `add_item`, `move_item`, `create_blocks`, `move_block`, `delete_block`, `get_week_plan`, `set_constraint`, `mark_progress`, `undo_last_change`.
+
+The validator rejects overlaps, blocks outside waking hours, study and personal time over daily capacity, and any move of a locked deadline. Invalid plans are retried once. Do not regenerate imported deadlines. Do not modify the voice loop.

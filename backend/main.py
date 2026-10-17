@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from planning.gemini_plan import GeminiError, plan_week
 from calendar_io import (
     MAX_BYTES,
     CalendarError,
@@ -44,6 +45,20 @@ class WeekOut(BaseModel):
 
 class WeeksResponse(BaseModel):
     weeks: list[WeekOut]
+
+
+class GeminiPlanIn(BaseModel):
+    request: str
+    week_start: str | None = None
+
+
+class GeminiPlanOut(BaseModel):
+    week_start: str
+    plan: Plan | None = None
+    valid: bool
+    errors: list[str]
+    attempts: int
+    message: str
 
 
 def create_app(state_path: Path | None = None) -> FastAPI:
@@ -177,6 +192,22 @@ def create_app(state_path: Path | None = None) -> FastAPI:
             )
         except StoreError as exc:
             raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/plan/gemini", response_model=GeminiPlanOut)
+    def post_gemini_plan(
+        body: GeminiPlanIn,
+        store: Store = Depends(get_store),
+    ) -> dict:
+        text = body.request.strip()
+        if not text:
+            raise HTTPException(400, "Say what you want planned")
+        if len(text) > 4000:
+            raise HTTPException(400, "That request is too long")
+        week = require_monday(body.week_start) if body.week_start else None
+        try:
+            return plan_week(store, text, week)
+        except GeminiError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
 
     return app
 

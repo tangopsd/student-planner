@@ -61,3 +61,34 @@ export type Classification = {
   locked: boolean;
   matched: boolean;
 };
+
+export type BlockKind = "study" | "fixed" | "personal" | "buffer";
+
+export type BlockStatus = "scheduled" | "done" | "skipped";
+
+export type Block = {
+  id: string;
+  item_id: string | null;
+  start: string;
+  end: string;
+  kind: BlockKind;
+  status: BlockStatus;
+  reason: string;
+};
+
+export type WeekPlan = {
+  week_start: string;
+  blocks: Block[];
+  version: number;
+  previous_version: number | null;
+  change_log: { at: string; summary: string }[];
+};
+
+export type GeminiPlanResult = {
+  week_start: string;
+  plan: WeekPlan | null;
+  valid: boolean;
+  errors: string[];
+  attempts: number;
+  message: string;
+};

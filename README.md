@@ -29,6 +29,14 @@ After the venv and `npm install`, `./scripts/dev.sh` starts both.
 
 If you have no feed yet, use **Load sample calendar** or **Add by hand**.
 
+## Weekly plan
+
+Set `GEMINI_API_KEY` in the environment before starting the backend. `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
+
+`POST /api/plan/gemini` sends the deadlines and profile already in `data/state.json` to Gemini, runs the tool calls, and checks the week. If the plan is invalid it retries once. The page shows that week under **Weekly plan**. **Plan this week** asks for blocks around the deadlines already on the desk. It does not regenerate them.
+
+Without `GEMINI_API_KEY` the endpoint returns 400 and leaves the file unchanged.
+
 ## Tests
 
 ```bash
@@ -62,5 +70,6 @@ Importing the same feed again refreshes title, course, type, time, and descripti
 | `GET` / `PUT` | `/api/profile` | Read or replace the student profile |
 | `GET` | `/api/classify?title=` | Keyword type (`matched` is false when nothing hit) |
 | `GET` / `POST` | `/api/plans` | List plan versions, or append the next version for a Monday |
+| `POST` | `/api/plan/gemini` | JSON `{"request": "Plan this week", "week_start": "YYYY-MM-DD"}`. `week_start` is optional. |
 
-Plan versions are stored for a later scheduler. This page does not place study blocks yet.
+Gemini tools are `list_items`, `add_item`, `move_item`, `create_blocks`, `move_block`, `delete_block`, `get_week_plan`, `set_constraint`, `mark_progress`, and `undo_last_change`. The validator rejects overlapping blocks, blocks outside waking hours, study time over the daily capacity, and any move of a locked deadline. Study and personal time count toward capacity. Fixed and buffer blocks do not. A deadline stored at local midnight can be studied until sleep that day.

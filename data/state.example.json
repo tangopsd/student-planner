@@ -9,5 +9,6 @@
     "daily_capacity_hours": 4
   },
   "items": [],
-  "plans": []
+  "plans": [],
+  "undo_stack": []
 }

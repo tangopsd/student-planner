@@ -1,10 +1,12 @@
 import type {
   Classification,
+  GeminiPlanResult,
   ImportResult,
   Item,
   ItemType,
   Profile,
   Week,
+  WeekPlan,
 } from "@/lib/types";
 
 type Issue = { loc?: Array<string | number>; msg?: string };
@@ -115,4 +117,19 @@ export function deleteItem(id: string) {
 
 export function classify(title: string) {
   return request<Classification>(`/api/classify?title=${encodeURIComponent(title)}`);
+}
+
+export function getPlans(weekStart?: string) {
+  const query = weekStart ? `?week_start=${encodeURIComponent(weekStart)}` : "";
+  return request<WeekPlan[]>(`/api/plans${query}`);
+}
+
+export function generatePlan(requestText: string, weekStart?: string) {
+  return request<GeminiPlanResult>("/api/plan/gemini", {
+    method: "POST",
+    body: JSON.stringify({
+      request: requestText,
+      ...(weekStart ? { week_start: weekStart } : {}),
+    }),
+  });
 }

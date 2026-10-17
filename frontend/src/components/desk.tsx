@@ -8,6 +8,7 @@ import { HoursPanel } from "@/components/hours-panel";
 import { ImportPanel } from "@/components/import-panel";
 import { ManualForm } from "@/components/manual-form";
 import { WeekList } from "@/components/week-list";
+import { WeekPlanner } from "@/components/week-grid";
 import { Button } from "@/components/ui/button";
 
 function nextOpen(items: Item[]): Item | undefined {
@@ -81,8 +82,7 @@ export function Desk() {
             </p>
             <h1 className="font-heading text-4xl italic leading-none sm:text-5xl">Desk</h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
-              Deadlines, grouped by the week they fall in. Import a Canvas feed, or type one in
-              when you don&apos;t have a link.
+              Import a Canvas feed, then plan the week around the deadlines already on the desk.
             </p>
           </div>
           {profile && weeks ? (
@@ -107,9 +107,13 @@ export function Desk() {
           <ImportPanel
             onImported={async () => {
               await refreshWeeks();
-              document.getElementById("plan")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              document.getElementById("weekly-plan")?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
+        </div>
+
+        <div className="mb-6">
+          <WeekPlanner items={items} />
         </div>
 
         {weeks === null && !error ? (
@@ -120,7 +124,7 @@ export function Desk() {
           </div>
         ) : (
           <div className="mb-6">
-            <WeekList weeks={weeks} onChanged={refreshWeeks} />
+            <WeekList weeks={weeks ?? []} onChanged={refreshWeeks} />
           </div>
         )}
 

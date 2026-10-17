@@ -251,9 +251,21 @@ class PlanIn(BaseModel):
         return value
 
 
+class UndoEntry(BaseModel):
+    """Profile, deadlines, and plans from before one planner change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str
+    profile: Profile
+    items: list[Item]
+    plans: list[Plan]
+
+
 class State(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     profile: Profile
     items: list[Item]
     plans: list[Plan]
+    undo_stack: list[UndoEntry] = Field(default_factory=list)
