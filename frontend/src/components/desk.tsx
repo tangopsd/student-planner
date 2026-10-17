@@ -23,7 +23,6 @@ export function Desk() {
   const [weeks, setWeeks] = useState<Week[] | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileVersion, setProfileVersion] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   function refreshWeeks() {
@@ -45,9 +44,6 @@ export function Desk() {
       .catch((err: unknown) => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Couldn't load the desk.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -55,7 +51,6 @@ export function Desk() {
   }, []);
 
   function retry() {
-    setLoading(true);
     setError(null);
     Promise.all([getWeeks(), getProfile()])
       .then(([weekBody, profileBody]) => {
@@ -66,8 +61,7 @@ export function Desk() {
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Couldn't load the desk.");
-      })
-      .finally(() => setLoading(false));
+      });
   }
 
   const items = weeks?.flatMap((week) => week.items) ?? [];
@@ -113,27 +107,34 @@ export function Desk() {
           <ImportPanel
             onImported={async () => {
               await refreshWeeks();
+              document.getElementById("plan")?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
         </div>
 
-        {loading ? (
-          <div role="status" className="grid gap-3" aria-label="Loading deadlines">
-            <p className="text-sm text-muted-foreground">Loading deadlines…</p>
+        {weeks === null && !error ? (
+          <div role="status" className="mb-6 grid gap-3" aria-label="Loading deadlines">
+            <p className="text-sm text-muted-foreground">Loading your plan…</p>
             <div className="h-24 animate-pulse rounded-xl bg-muted" />
             <div className="h-24 animate-pulse rounded-xl bg-muted" />
           </div>
         ) : (
-          <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
-            <div className="grid gap-6">
-              <ManualForm onCreated={refreshWeeks} />
-              {profile ? (
-                <HoursPanel key={profileVersion} profile={profile} onSaved={setProfile} />
-              ) : null}
-            </div>
-            <WeekList weeks={weeks ?? []} onChanged={refreshWeeks} />
+          <div className="mb-6">
+            <WeekList weeks={weeks} onChanged={refreshWeeks} />
           </div>
         )}
+
+        <details className="rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10">
+          <summary className="cursor-pointer text-sm font-medium">
+            Add a deadline by hand, or set your hours
+          </summary>
+          <div className="mt-4 grid gap-6">
+            <ManualForm onCreated={refreshWeeks} />
+            {profile ? (
+              <HoursPanel key={profileVersion} profile={profile} onSaved={setProfile} />
+            ) : null}
+          </div>
+        </details>
       </main>
     </>
   );

@@ -20,7 +20,8 @@ function summary(result: ImportResult): string {
   const parts: string[] = [];
   if (result.created) parts.push(`${result.created} added`);
   if (result.updated) parts.push(`${result.updated} updated`);
-  return parts.length ? `${parts.join(", ")}.` : "Nothing new in that feed.";
+  const lead = parts.length ? `${parts.join(", ")}.` : "Nothing new in that feed.";
+  return `${lead} Your plan is just below.`;
 }
 
 export function ImportPanel({ onImported }: { onImported: () => Promise<void> }) {

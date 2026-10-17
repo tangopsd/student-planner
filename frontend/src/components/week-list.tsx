@@ -166,6 +166,34 @@ function DeadlineRow({ item, onChanged }: { item: Item; onChanged: () => Promise
   );
 }
 
+function WeekSection({
+  week,
+  divided,
+  onChanged,
+}: {
+  week: Week;
+  divided: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  return (
+    <section className={cn(week.relation === "current" && "border-l-2 border-primary pl-4")}>
+      {divided ? <Separator className="my-6" /> : null}
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+        {RELATION_LABEL[week.relation]}
+      </p>
+      <h2 className="font-heading text-3xl leading-tight">{week.label}</h2>
+      <p className="text-sm text-muted-foreground">
+        {week.items.length === 1 ? "1 deadline" : `${week.items.length} deadlines`}
+      </p>
+      <div className="divide-y divide-border">
+        {week.items.map((item) => (
+          <DeadlineRow key={item.id} item={item} onChanged={onChanged} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function WeekList({
   weeks,
   onChanged,
@@ -173,42 +201,53 @@ export function WeekList({
   weeks: Week[];
   onChanged: () => Promise<void>;
 }) {
+  const active = weeks.filter((week) => week.relation !== "past");
+  const past = weeks.filter((week) => week.relation === "past");
+  const pastCount = past.reduce((total, week) => total + week.items.length, 0);
+
   return (
-    <Card>
+    <Card id="plan">
       <CardHeader>
-        <CardTitle>By week</CardTitle>
-        <CardDescription>Monday through Sunday. Times are Pacific.</CardDescription>
+        <CardTitle>Your plan</CardTitle>
+        <CardDescription>
+          Deadlines from the feed, starting with this week. Times are Pacific.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {weeks.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
             <p className="font-heading text-2xl">Nothing on the desk yet</p>
             <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-              Paste a calendar link, drop an .ics file, or add a deadline by hand.
+              Paste a Canvas link above. The week-by-week plan shows up here.
             </p>
           </div>
         ) : (
           <div>
-            {weeks.map((week, index) => (
-              <section
+            {(active.length > 0 ? active : past).map((week, index) => (
+              <WeekSection
                 key={week.week_start}
-                className={cn(week.relation === "current" && "border-l-2 border-primary pl-4")}
-              >
-                {index > 0 ? <Separator className="my-6" /> : null}
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                  {RELATION_LABEL[week.relation]}
-                </p>
-                <h2 className="font-heading text-3xl leading-tight">{week.label}</h2>
-                <p className="text-sm text-muted-foreground">
-                  {week.items.length === 1 ? "1 deadline" : `${week.items.length} deadlines`}
-                </p>
-                <div className="divide-y divide-border">
-                  {week.items.map((item) => (
-                    <DeadlineRow key={item.id} item={item} onChanged={onChanged} />
+                week={week}
+                divided={index > 0}
+                onChanged={onChanged}
+              />
+            ))}
+            {active.length > 0 && past.length > 0 ? (
+              <details className="mt-8">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Earlier weeks ({pastCount} {pastCount === 1 ? "deadline" : "deadlines"})
+                </summary>
+                <div className="mt-4">
+                  {past.map((week, index) => (
+                    <WeekSection
+                      key={week.week_start}
+                      week={week}
+                      divided={index > 0}
+                      onChanged={onChanged}
+                    />
                   ))}
                 </div>
-              </section>
-            ))}
+              </details>
+            ) : null}
           </div>
         )}
       </CardContent>
