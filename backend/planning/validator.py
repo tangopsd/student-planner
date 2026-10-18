@@ -111,6 +111,25 @@ def validate_week(
     return errors
 
 
+def explain_plan_errors(errors: list[str]) -> str:
+    """A short sentence for the page. The validator text stays available for a retry."""
+    text = " ".join(errors)
+    lowered = text.lower()
+    if "block " not in lowered and "deadline" not in lowered and "overlap" not in lowered:
+        return text
+    if "deadline" in lowered:
+        return "That move would run past the deadline, so I left the week as it was."
+    if "overlap" in lowered:
+        return "That time overlaps something else, so I left the week as it was."
+    if "waking" in lowered or "sleep" in lowered:
+        return "That time is outside waking hours, so I left the week as it was."
+    if "capacity" in lowered:
+        return "That day is already at the study limit, so I left the week as it was."
+    if "locked" in lowered:
+        return "That deadline is locked, so I left it where it is."
+    return "I couldn't update the week without breaking the schedule."
+
+
 def _local(value: str) -> datetime:
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:

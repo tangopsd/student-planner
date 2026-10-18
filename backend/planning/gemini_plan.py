@@ -9,7 +9,7 @@ from typing import Any
 from ical_parser import LOCAL_TZ
 from models import Item
 from planning.tools import TOOL_SPECS, ToolContext, execute_tool, plain
-from planning.validator import validate_week
+from planning.validator import explain_plan_errors, validate_week
 from store import Store
 from weeks import today_in_la
 
@@ -112,6 +112,9 @@ def plan_week(
         if attempt == 0:
             transcript.append({"role": "user", "text": _retry_message(errors, target)})
 
+    if errors:
+        message = explain_plan_errors(errors)
+        errors = [message]
     return {
         "week_start": target,
         "plan": plan,

@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from ical_parser import LOCAL_TZ
 from models import Block, Item, Plan, Profile
-from planning.validator import validate_week
+from planning.validator import explain_plan_errors, validate_week
 from store import Store, StoreError
 
 DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -60,6 +60,34 @@ STOP_WORDS = {
     "week",
     "review",
     "study",
+    "up",
+}
+MOVE_WORDS = {"move", "reschedule", "shift", "push"}
+MONTHS = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
 }
 
 
@@ -78,6 +106,7 @@ def plan_locally(store: Store, week_start: str, request: str = "") -> dict:
     rescheduled = _reschedule(store, week_start, request, existing)
     if rescheduled is not None:
         return rescheduled
+    # A plain "plan the week" keeps the blocks already saved. A move is handled above.
     if existing is not None and existing.blocks:
         return {
             "week_start": week_start,
@@ -122,71 +151,198 @@ def plan_locally(store: Store, week_start: str, request: str = "") -> dict:
 
 
 def _reschedule(store: Store, week_start: str, request: str, existing: Plan | None) -> dict | None:
-    """Move or add one block when the request names a weekday. Otherwise leave planning alone."""
-    day_index = _target_weekday(request)
-    if day_index is None:
+    """Edit the current week when the request asks to move something."""
+    if not _is_change_request(request, week_start):
         return None
+    mentions = _day_mentions(request, week_start)
+    if not mentions:
+        return _refused(store, week_start, "Tell me which day to move it to.")
+    source = mentions[0] if len(mentions) >= 2 else None
+    target_day = mentions[-1]
     items = store.items()
-    item = _match_item(items, request)
+    chosen = _block_on_day(existing, source, items, request) if source is not None else None
+    if source is not None and chosen is None:
+        return _refused(store, week_start, f"Nothing is scheduled on {_day_label(source)} to move.")
+    item = (
+        _item_for(items, chosen.item_id)
+        if chosen is not None
+        else _match_item(items, request, week_start, existing)
+    )
     if item is None:
         return _refused(store, week_start, "Say which deadline to move, and which day.")
-    target_day = date.fromisoformat(week_start) + timedelta(days=day_index)
-    blocks = [] if existing is None else list(existing.blocks)
-    linked = [block for block in blocks if block.item_id == item.id]
-    study = [block for block in linked if block.kind in ("study", "personal")]
-    wants_review = bool({"review", "study"} & set(_words(request)))
-    if study:
-        chosen = study[0]
-        placed = _place(store.profile(), existing, target_day, chosen.id, _local(chosen.start), _local(chosen.end) - _local(chosen.start))
-        if placed is None:
-            return _refused(store, week_start, f"{DAY_NAMES[day_index]} is full during waking hours.")
-        start, end = placed
-        summary = f"Moved {item.title} to {DAY_NAMES[day_index]}"
-        try:
-            store.move_block(chosen.id, start.isoformat(), end.isoformat(), summary, datetime.now(LOCAL_TZ).isoformat())
-        except StoreError as exc:
-            return _refused(store, week_start, str(exc))
-        message = f"Moved {item.title} to {DAY_NAMES[day_index]}, {_clock(start)}–{_clock(end)}."
-    elif wants_review or not linked:
-        if item.locked and not wants_review and linked:
-            return _refused(store, week_start, f"{item.title} is locked, so its time stays put.")
-        placed = _place(store.profile(), existing, target_day, None, None, timedelta(hours=1))
-        if placed is None:
-            return _refused(store, week_start, f"{DAY_NAMES[day_index]} is full during waking hours.")
-        start, end = placed
-        block = _block(item, start, end, "personal" if item.type == "personal" else "study")
-        summary = f"Added a review for {item.title} on {DAY_NAMES[day_index]}"
-        try:
-            store.create_blocks(week_start, [block], summary, datetime.now(LOCAL_TZ).isoformat())
-        except StoreError as exc:
-            return _refused(store, week_start, str(exc))
-        message = f"Added a review for {item.title} on {DAY_NAMES[day_index]}, {_clock(start)}–{_clock(end)}."
-    else:
+    wants_new = bool({"review", "study"} & set(_words(request)))
+    if chosen is None and existing is not None:
+        linked = [block for block in existing.blocks if block.item_id == item.id]
+        study = [block for block in linked if block.kind in ("study", "personal")]
+        if study:
+            chosen = study[0]
+        elif not wants_new:
+            fixed = [block for block in linked if block.kind == "fixed"]
+            chosen = fixed[0] if fixed else None
+    if chosen is None and wants_new:
+        return _add_review(store, week_start, item, target_day)
+    if chosen is None:
+        return _refused(store, week_start, f"Nothing on the week is scheduled for {item.title}.")
+    if item.locked and chosen.kind == "fixed":
         return _refused(store, week_start, f"{item.title} is locked, so its time stays put.")
-    plan = store.latest_plan(week_start)
-    original_ids = {row.id for row in store.items()}
-    locked_baseline = {row.id: row.due_or_start for row in store.items() if row.locked}
-    errors = validate_week(store.profile(), store.items(), plan, locked_baseline, original_ids)
+    duration = _local(chosen.end) - _local(chosen.start)
+    preferred = _local(chosen.start)
+    return _move_with_retry(store, week_start, item, chosen, target_day, preferred, duration)
+
+
+def _move_with_retry(
+    store: Store,
+    week_start: str,
+    item: Item,
+    chosen: Block,
+    target_day: date,
+    preferred: datetime,
+    duration: timedelta,
+) -> dict:
+    """Move once, and if the validator objects, try one corrected time."""
+    week = date.fromisoformat(week_start)
+    profile = store.profile()
+    existing = store.latest_plan(week_start)
+    placed = _place(profile, existing, target_day, chosen.id, preferred, duration, None)
+    if placed is None:
+        return _refused(store, week_start, f"{_day_label(target_day)} is full during waking hours.")
+    if not _write_move(store, chosen.id, placed, item.title, target_day):
+        return _refused(store, week_start, "I couldn't move that block.")
+    errors = _week_errors(store, week_start)
+    if not errors:
+        start, end = placed
+        return _ok(store, week_start, f"Moved {item.title} to {_day_label(target_day)}, {_clock(start)}–{_clock(end)}.", 1)
+    raw = list(errors)
+    _undo(store)
+    cutoff = _cutoff_for(item.due_or_start)
+    retry_day = target_day if week <= target_day <= week + timedelta(days=6) and target_day <= cutoff.date() else cutoff.date()
+    if retry_day < week or retry_day > week + timedelta(days=6):
+        return _failed(store, week_start, explain_plan_errors(raw))
+    existing = store.latest_plan(week_start)
+    placed = _place(profile, existing, retry_day, chosen.id, preferred, duration, cutoff)
+    if placed is None or not _write_move(store, chosen.id, placed, item.title, retry_day):
+        return _failed(store, week_start, explain_plan_errors(raw))
+    errors = _week_errors(store, week_start)
     if errors:
-        try:
-            store.undo()
-        except StoreError:
-            pass
-        plan = store.latest_plan(week_start)
-        return {
-            "week_start": week_start,
-            "plan": plan,
-            "valid": False,
-            "errors": errors,
-            "attempts": 1,
-            "message": " ".join(errors),
-        }
+        _undo(store)
+        return _failed(store, week_start, explain_plan_errors(errors))
+    start, end = placed
+    if retry_day != target_day:
+        message = (
+            f"{_day_label(target_day)} is after the deadline, so I scheduled "
+            f"{item.title} on {_day_label(retry_day)}, {_clock(start)}–{_clock(end)}."
+        )
+    else:
+        message = f"Moved {item.title} to {_day_label(retry_day)}, {_clock(start)}–{_clock(end)}."
+    return _ok(store, week_start, message, 2)
+
+
+def _add_review(store: Store, week_start: str, item: Item, target_day: date) -> dict:
+    """Add one study block. A locked exam stays where it is."""
+    week = date.fromisoformat(week_start)
+    profile = store.profile()
+    duration = timedelta(hours=1)
+    cutoff = _cutoff_for(item.due_or_start)
+    existing = store.latest_plan(week_start)
+    placed = _place(profile, existing, target_day, None, None, duration, None)
+    if placed is None:
+        return _refused(store, week_start, f"{_day_label(target_day)} is full during waking hours.")
+    if not _write_new(store, week_start, item, placed, target_day):
+        return _refused(store, week_start, "I couldn't add that block.")
+    errors = _week_errors(store, week_start)
+    if not errors:
+        start, end = placed
+        return _ok(
+            store,
+            week_start,
+            f"Added a review for {item.title} on {_day_label(target_day)}, {_clock(start)}–{_clock(end)}.",
+            1,
+        )
+    raw = list(errors)
+    _undo(store)
+    retry_day = target_day if week <= target_day <= week + timedelta(days=6) and target_day <= cutoff.date() else cutoff.date()
+    if retry_day < week or retry_day > week + timedelta(days=6):
+        return _failed(store, week_start, explain_plan_errors(raw))
+    existing = store.latest_plan(week_start)
+    placed = _place(profile, existing, retry_day, None, None, duration, cutoff)
+    if placed is None or not _write_new(store, week_start, item, placed, retry_day):
+        return _failed(store, week_start, explain_plan_errors(raw))
+    errors = _week_errors(store, week_start)
+    if errors:
+        _undo(store)
+        return _failed(store, week_start, explain_plan_errors(errors))
+    start, end = placed
+    return _ok(
+        store,
+        week_start,
+        f"Added a review for {item.title} on {_day_label(retry_day)}, {_clock(start)}–{_clock(end)}.",
+        2,
+    )
+
+
+def _write_new(
+    store: Store,
+    week_start: str,
+    item: Item,
+    placed: tuple[datetime, datetime],
+    day: date,
+) -> bool:
+    start, end = placed
+    block = _block(item, start, end, "study")
+    summary = f"Added a review for {item.title} on {_day_label(day)}"
+    try:
+        store.create_blocks(week_start, [block], summary, datetime.now(LOCAL_TZ).isoformat())
+    except StoreError:
+        return False
+    return True
+
+
+def _write_move(store: Store, block_id: str, placed: tuple[datetime, datetime], title: str, day: date) -> bool:
+    start, end = placed
+    summary = f"Moved {title} to {_day_label(day)}"
+    try:
+        store.move_block(block_id, start.isoformat(), end.isoformat(), summary, datetime.now(LOCAL_TZ).isoformat())
+    except StoreError:
+        return False
+    return True
+
+
+def _week_errors(store: Store, week_start: str) -> list[str]:
+    items = store.items()
+    return validate_week(
+        store.profile(),
+        items,
+        store.latest_plan(week_start),
+        {item.id: item.due_or_start for item in items if item.locked},
+        {item.id for item in items},
+    )
+
+
+def _undo(store: Store) -> None:
+    try:
+        store.undo()
+    except StoreError:
+        pass
+
+
+def _ok(store: Store, week_start: str, message: str, attempts: int) -> dict:
     return {
         "week_start": week_start,
-        "plan": plan,
+        "plan": store.latest_plan(week_start),
         "valid": True,
         "errors": [],
-        "attempts": 1,
+        "attempts": attempts,
+        "message": message,
+    }
+
+
+def _failed(store: Store, week_start: str, message: str) -> dict:
+    return {
+        "week_start": week_start,
+        "plan": store.latest_plan(week_start),
+        "valid": False,
+        "errors": [message],
+        "attempts": 2,
         "message": message,
     }
 
@@ -202,35 +358,128 @@ def _refused(store: Store, week_start: str, message: str) -> dict:
     }
 
 
-def _target_weekday(request: str) -> int | None:
-    found = None
-    for word in _words(request):
+def _is_change_request(request: str, week_start: str) -> bool:
+    words = set(_words(request))
+    return bool(words & MOVE_WORDS) or bool(_day_mentions(request, week_start))
+
+
+def _day_mentions(request: str, week_start: str) -> list[date]:
+    week = date.fromisoformat(week_start)
+    tokens = _words(request)
+    mentions: list[date] = []
+    index = 0
+    while index < len(tokens):
+        word = tokens[index]
         if word in WEEKDAY_INDEX:
-            found = WEEKDAY_INDEX[word]
-    return found
+            mentions.append(week + timedelta(days=WEEKDAY_INDEX[word]))
+            index += 1
+            continue
+        if word in MONTHS and index + 1 < len(tokens):
+            day_number = _day_number(tokens[index + 1])
+            if day_number is not None:
+                try:
+                    mentions.append(date(week.year, MONTHS[word], day_number))
+                except ValueError:
+                    pass
+                index += 2
+                continue
+        index += 1
+    return mentions
+
+
+def _day_number(token: str) -> int | None:
+    match = re.fullmatch(r"(\d{1,2})(?:st|nd|rd|th)?", token)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _day_label(day: date) -> str:
+    return f"{DAY_NAMES[day.weekday()]} {day.strftime('%b')} {day.day}"
+
+
+def _block_on_day(plan: Plan | None, day: date, items: list[Item], request: str) -> Block | None:
+    if plan is None:
+        return None
+    on_day = [block for block in plan.blocks if _local(block.start).date() == day]
+    if not on_day:
+        return None
+    if len(on_day) == 1:
+        return on_day[0]
+    by_id = {item.id: item for item in items}
+    best = on_day[0]
+    best_score = -1
+    for block in on_day:
+        item = by_id.get(block.item_id or "")
+        score = _title_score(item.title, request) if item is not None else 0
+        if score > best_score:
+            best = block
+            best_score = score
+    return best
+
+
+def _item_for(items: list[Item], item_id: str | None) -> Item | None:
+    for item in items:
+        if item.id == item_id:
+            return item
+    return None
 
 
 def _words(request: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", request.lower())
 
 
-def _match_item(items: list[Item], request: str) -> Item | None:
-    wanted = [word for word in _words(request) if word not in STOP_WORDS and word not in WEEKDAY_INDEX]
-    if not wanted:
+def _title_score(title: str, request: str) -> int:
+    wanted = _match_words(request)
+    title_words = set(_words(title))
+    score = 0
+    for word in wanted:
+        if word in title_words:
+            score += len(word)
+        elif len(word) >= 3 and any(word in part or part in word for part in title_words if len(part) >= 3):
+            score += len(word)
+    return score
+
+
+def _match_words(request: str) -> list[str]:
+    words = []
+    for word in _words(request):
+        if word in STOP_WORDS or word in WEEKDAY_INDEX or word in MONTHS:
+            continue
+        if _day_number(word) is not None:
+            continue
+        words.append(word)
+    return words
+
+
+def _match_item(
+    items: list[Item],
+    request: str,
+    week_start: str,
+    existing: Plan | None,
+) -> Item | None:
+    """Pick a deadline. A block already on this week beats an older assignment with the same word."""
+    if not _match_words(request):
         return None
+    week = date.fromisoformat(week_start)
+    week_end = week + timedelta(days=6)
+    scheduled = set() if existing is None else {block.item_id for block in existing.blocks}
     best: Item | None = None
-    best_score = 0
+    best_rank = (0, 0, 0, 0)
     for item in items:
-        title_words = set(_words(item.title))
-        score = 0
-        for word in wanted:
-            if word in title_words:
-                score += len(word)
-            elif len(word) >= 3 and any(word in part or part in word for part in title_words if len(part) >= 3):
-                score += len(word)
-        if score > best_score:
+        score = _title_score(item.title, request)
+        if score <= 0:
+            continue
+        cutoff = _cutoff_for(item.due_or_start).date()
+        rank = (
+            score,
+            1 if item.id in scheduled else 0,
+            1 if week <= cutoff <= week_end else 0,
+            1 if cutoff >= week else 0,
+        )
+        if rank > best_rank:
             best = item
-            best_score = score
+            best_rank = rank
     return best
 
 
@@ -241,6 +490,7 @@ def _place(
     skip_id: str | None,
     preferred: datetime | None,
     duration: timedelta,
+    not_after: datetime | None,
 ) -> tuple[datetime, datetime] | None:
     occupied = _commitments(profile, day)
     if plan is not None:
@@ -253,20 +503,28 @@ def _place(
             occupied.append((start, _local(block.end)))
     wake = _on_clock(day, profile.waking_hours.wake)
     sleep = _on_clock(day, profile.waking_hours.sleep)
+
+    def fits(start: datetime, end: datetime) -> bool:
+        if end <= start or start < wake or end > sleep:
+            return False
+        if not_after is not None and end > not_after:
+            return False
+        return not _overlaps(start, end, occupied)
+
     if preferred is not None:
         start = _on_clock(day, f"{preferred.hour:02d}:{preferred.minute:02d}")
         end = start + duration
-        if wake <= start and end <= sleep and not _overlaps(start, end, occupied):
+        if fits(start, end):
             return start, end
     if duration == timedelta(hours=1):
         for start, end in reversed(_slots(day, profile)):
-            if not _overlaps(start, end, occupied):
+            if fits(start, end):
                 return start, end
         return None
     cursor = sleep - duration
     while cursor >= wake:
         end = cursor + duration
-        if end <= sleep and not _overlaps(cursor, end, occupied):
+        if fits(cursor, end):
             return cursor, end
         cursor -= timedelta(minutes=30)
     return None

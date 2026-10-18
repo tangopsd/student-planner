@@ -564,6 +564,186 @@ def test_review_request_adds_a_block_without_moving_the_exam(tmp_path, monkeypat
     assert stored["exam-1"].due_or_start == exam.due_or_start
 
 
+def test_saturday_assignment_moves_to_tuesday(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    store.add_item(
+        make_item(
+            id="warm-up",
+            title="Assignment 0: Python Warm-up",
+            course="CSE 415 A",
+            due_or_start="2026-10-05T00:00:00-07:00",
+            estimated_effort_hours=None,
+        )
+    )
+    store.add_item(
+        make_item(
+            id="arch-1",
+            title="Assignment 01: Your Third Place",
+            course="ARCH 151 A",
+            due_or_start="2026-10-24T00:00:00-07:00",
+            estimated_effort_hours=None,
+        )
+    )
+    store.create_blocks(
+        "2026-10-19",
+        [
+            make_block(
+                id="sat-block",
+                item_id="arch-1",
+                start="2026-10-24T22:00:00-07:00",
+                end="2026-10-24T23:00:00-07:00",
+            )
+        ],
+        "seed",
+        "2026-10-17T16:00:00-07:00",
+    )
+    result = plan_week(store, "move saturday's assignment up to tuesday", week_start="2026-10-19")
+    assert result["valid"] is True, result["errors"]
+    assert "already has a schedule" not in result["message"].lower()
+    assert "Block " not in result["message"]
+    assert len(result["plan"].blocks) == 1
+    moved = result["plan"].blocks[0]
+    assert moved.id == "sat-block"
+    assert moved.item_id == "arch-1"
+    assert moved.start.startswith("2026-10-20")
+    assert store.items()[0].id == "warm-up"
+
+
+def test_calendar_date_replans_the_existing_week(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    store.add_item(
+        make_item(
+            id="arch-1",
+            title="Assignment 01: Your Third Place",
+            due_or_start="2026-10-24T00:00:00-07:00",
+            estimated_effort_hours=None,
+        )
+    )
+    store.create_blocks(
+        "2026-10-19",
+        [
+            make_block(
+                id="sat-block",
+                item_id="arch-1",
+                start="2026-10-24T22:00:00-07:00",
+                end="2026-10-24T23:00:00-07:00",
+            )
+        ],
+        "seed",
+        "2026-10-17T16:00:00-07:00",
+    )
+    result = plan_week(store, "move oct 24th's assignment to october 23rd", week_start="2026-10-19")
+    assert result["valid"] is True, result["errors"]
+    assert "already has a schedule" not in result["message"].lower()
+    assert result["plan"].blocks[0].id == "sat-block"
+    assert result["plan"].blocks[0].start.startswith("2026-10-23")
+
+
+def test_deadline_retry_hides_the_raw_validator_error(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    store.set_constraint("shorter day", wake="08:00", sleep="10:00")
+    store.add_item(
+        make_item(
+            id="hw-1",
+            title="HW1",
+            due_or_start="2026-10-20T00:00:00-07:00",
+            estimated_effort_hours=1,
+        )
+    )
+    store.add_item(
+        make_item(
+            id="other",
+            title="Other",
+            due_or_start="2026-10-21T00:00:00-07:00",
+            estimated_effort_hours=1,
+        )
+    )
+    store.create_blocks(
+        "2026-10-19",
+        [
+            make_block(
+                id="mon-block",
+                item_id="hw-1",
+                start="2026-10-19T08:00:00-07:00",
+                end="2026-10-19T09:00:00-07:00",
+            ),
+            make_block(
+                id="tue-block",
+                item_id="other",
+                start="2026-10-20T08:00:00-07:00",
+                end="2026-10-20T10:00:00-07:00",
+            ),
+        ],
+        "seed",
+        "2026-10-17T16:00:00-07:00",
+    )
+    result = plan_week(store, "move monday's assignment to saturday", week_start="2026-10-19")
+    assert result["valid"] is False
+    assert result["attempts"] == 2
+    assert "Block " not in result["message"]
+    assert "deadline" in result["message"].lower()
+    assert result["errors"] == [result["message"]]
+    kept = next(block for block in result["plan"].blocks if block.id == "mon-block")
+    assert kept.start.startswith("2026-10-19")
+
+
+class LeavesTheOverlap:
+    def __init__(self):
+        self.retry = ""
+
+    def complete(self, turns):
+        for turn in turns:
+            if turn.get("role") == "user" and "The plan is invalid" in turn.get("text", ""):
+                self.retry = turn["text"]
+                return ModelTurn("I could not fix it.", [])
+        return ModelTurn(
+            "Scheduling the overlap.",
+            [
+                (
+                    "create_blocks",
+                    {
+                        "week_start": "2026-10-19",
+                        "blocks": [
+                            {
+                                "id": "b1",
+                                "item_id": "hw-1",
+                                "start": "2026-10-20T18:00:00-07:00",
+                                "end": "2026-10-20T19:00:00-07:00",
+                                "kind": "study",
+                                "reason": "First pass",
+                            },
+                            {
+                                "id": "b2",
+                                "item_id": "hw-1",
+                                "start": "2026-10-20T18:30:00-07:00",
+                                "end": "2026-10-20T19:30:00-07:00",
+                                "kind": "study",
+                                "reason": "Overlaps",
+                            },
+                        ],
+                    },
+                )
+            ],
+        )
+
+
+def test_validator_error_is_sent_back_once_then_shortened(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    store.add_item(make_item())
+    model = LeavesTheOverlap()
+    result = plan_week(store, "Plan the week", week_start="2026-10-19", model=model)
+    assert result["attempts"] == 2
+    assert result["valid"] is False
+    assert "Blocks b1 and b2 overlap." in model.retry
+    assert "Block " not in result["message"]
+    assert result["errors"] == [result["message"]]
+    assert "overlap" in result["message"].lower()
+
+
 def test_gemini_endpoint_keeps_items_without_a_key(client, monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     created = client.post(
