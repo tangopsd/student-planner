@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getProfile, getWeeks } from "@/lib/api";
 import { formatHours, formatWhen } from "@/lib/format";
-import type { Item, Profile, Week } from "@/lib/types";
+import type { Item, Profile, Week, WeekPlan } from "@/lib/types";
 import { HoursPanel } from "@/components/hours-panel";
 import { ImportPanel } from "@/components/import-panel";
 import { ManualForm } from "@/components/manual-form";
@@ -20,7 +20,13 @@ function nextOpen(items: Item[]): Item | undefined {
     )[0];
 }
 
-export function Desk() {
+export function Desk({
+  initialPlans = [],
+  initialPlanError = null,
+}: {
+  initialPlans?: WeekPlan[];
+  initialPlanError?: string | null;
+}) {
   const [weeks, setWeeks] = useState<Week[] | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileVersion, setProfileVersion] = useState(0);
@@ -113,7 +119,11 @@ export function Desk() {
         </div>
 
         <div className="mb-6">
-          <WeekPlanner items={items} />
+          <WeekPlanner
+            items={items}
+            initialPlans={initialPlans}
+            initialPlanError={initialPlanError}
+          />
         </div>
 
         {weeks === null && !error ? (

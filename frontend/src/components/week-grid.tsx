@@ -1,73 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { generatePlan, getPlans } from "@/lib/api";
-import { formatWhen } from "@/lib/format";
 import type { Block, Item, WeekPlan } from "@/lib/types";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
-const KIND_LABEL = {
-  study: "Study",
-  fixed: "Fixed",
-  personal: "Personal",
-  buffer: "Buffer",
-} as const;
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function readPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
-  return parts.find((part) => part.type === type)?.value ?? "";
-}
-
-function localDateKey(iso: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(iso));
-  return `${readPart(parts, "year")}-${readPart(parts, "month")}-${readPart(parts, "day")}`;
-}
-
-function defaultWeekStart(now: Date): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-  const utc = new Date(
-    Date.UTC(Number(readPart(parts, "year")), Number(readPart(parts, "month")) - 1, Number(readPart(parts, "day"))),
-  );
-  const weekday = utc.getUTCDay();
-  const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
-  utc.setUTCDate(utc.getUTCDate() + mondayOffset);
-  if (weekday === 0 || weekday === 6) utc.setUTCDate(utc.getUTCDate() + 7);
-  return utc.toISOString().slice(0, 10);
-}
-
-function addDays(iso: string, days: number): string {
-  const [year, month, day] = iso.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day + days));
-  return date.toISOString().slice(0, 10);
-}
-
-function dayLabel(iso: string): { weekday: string; date: string } {
-  const [year, month, day] = iso.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return {
-    weekday: new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(date),
-    date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(date),
-  };
-}
-
-function pickLatest(plans: WeekPlan[]): WeekPlan | null {
+function latestPlan(plans: WeekPlan[]): WeekPlan | null {
   if (plans.length === 0) return null;
   return [...plans].sort((left, right) => {
     if (left.week_start === right.week_start) return right.version - left.version;
@@ -75,171 +15,188 @@ function pickLatest(plans: WeekPlan[]): WeekPlan | null {
   })[0];
 }
 
-export function WeekPlanner({ items }: { items: Item[] }) {
-  const [remote, setRemote] = useState<WeekPlan | null>(null);
-  const [weekStart, setWeekStart] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [note, setNote] = useState<string | null>(null);
+function dateOf(iso: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(iso);
+  return match ? match[1] : iso.slice(0, 10);
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    getPlans()
-      .then((rows) => {
-        if (cancelled) return;
-        const latest = pickLatest(rows);
-        setRemote(latest);
-        setWeekStart(latest ? latest.week_start : defaultWeekStart(new Date()));
-        setLoaded(true);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Couldn't load the weekly plan.");
-        setWeekStart(defaultWeekStart(new Date()));
-        setLoaded(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+function clock(iso: string): string {
+  const match = /T(\d{2}):(\d{2})/.exec(iso);
+  if (!match) return iso;
+  const hour24 = Number(match[1]);
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour = hour24 % 12 || 12;
+  return `${hour}:${match[2]} ${suffix}`;
+}
+
+function dayHeading(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (!year || !month || !day) return isoDate;
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  return `${WEEKDAYS[utc.getUTCDay()]} ${MONTHS[month - 1]} ${day}`;
+}
+
+function addDays(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day + days));
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${utc.getUTCFullYear()}-${pad(utc.getUTCMonth() + 1)}-${pad(utc.getUTCDate())}`;
+}
+
+function blockTitle(block: Block, items: Item[]): string {
+  const linked = block.item_id ? items.find((item) => item.id === block.item_id) : undefined;
+  return linked?.title || block.reason || "Untitled block";
+}
+
+export function WeekPlanner({
+  items,
+  initialPlans,
+  initialPlanError,
+}: {
+  items: Item[];
+  initialPlans: WeekPlan[];
+  initialPlanError: string | null;
+}) {
+  const starting = latestPlan(initialPlans);
+  const [plan, setPlan] = useState<WeekPlan | null>(starting);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(initialPlanError);
+  const [debug, setDebug] = useState(() =>
+    JSON.stringify(starting ? { source: "saved plan", plan: starting } : { source: "saved plan", plans: initialPlans }, null, 2),
+  );
 
   async function onPlan() {
     setBusy(true);
     setError(null);
-    setErrors([]);
-    setNote(null);
     try {
       const result = await generatePlan(
         "Plan study blocks for the target week from the deadlines already on the desk. Do not add or replace those deadlines.",
       );
-      setWeekStart(result.week_start);
-      setRemote(result.plan);
-      setLoaded(true);
-      setErrors(result.errors);
-      setNote(result.message || null);
-      if (!result.valid) {
-        setError(
-          result.plan?.blocks?.length
-            ? "Some of these blocks still break the rules."
-            : "No study blocks were placed for this week.",
-        );
+      console.log("POST /api/plan/gemini", result);
+      setDebug(JSON.stringify(result, null, 2));
+      const next = result.plan;
+      setPlan(next);
+      const count = next?.blocks?.length ?? 0;
+      if (result.errors?.length) {
+        setError(result.errors.join(" "));
+      } else if (!next || count === 0) {
+        setError(result.message || "The planner returned no blocks.");
+      } else if (!result.valid) {
+        setError(result.message || "The planner returned a plan that failed its checks.");
       }
-      document.getElementById("week-grid")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not plan the week.");
+      const message = err instanceof Error ? err.message : "Could not plan the week.";
+      console.log("POST /api/plan/gemini failed", err);
+      setError(message);
+      setDebug(JSON.stringify({ error: message }, null, 2));
     } finally {
       setBusy(false);
     }
   }
 
-  const days = weekStart ? Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)) : [];
-  const byId = new Map(items.map((item) => [item.id, item]));
-  const byDay = new Map<string, Block[]>();
-  for (const block of remote?.blocks ?? []) {
-    const key = localDateKey(block.start);
-    const list = byDay.get(key) ?? [];
-    list.push(block);
-    byDay.set(key, list);
+  async function reloadSaved() {
+    try {
+      const rows = await getPlans();
+      console.log("GET /api/plans", rows);
+      const next = latestPlan(rows);
+      setPlan(next);
+      setDebug(JSON.stringify(rows, null, 2));
+      if (!next || next.blocks.length === 0) {
+        setError("Saved plans do not contain any blocks.");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not load saved plans.";
+      setError(message);
+      setDebug(JSON.stringify({ error: message }, null, 2));
+    }
   }
-  const range = days.length
-    ? `${dayLabel(days[0]).date} – ${dayLabel(days[6]).date}`
-    : "This week";
+
+  const blocks = Array.isArray(plan?.blocks) ? plan.blocks : [];
+  const weekStart = plan?.week_start ?? null;
+  const days = weekStart ? Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)) : [];
+  const daySet = new Set(days);
+  const grouped = new Map<string, Block[]>();
+  const outside: Block[] = [];
+  for (const block of [...blocks].sort((left, right) => (left.start < right.start ? -1 : 1))) {
+    const key = dateOf(block.start);
+    if (days.length > 0 && !daySet.has(key)) {
+      outside.push(block);
+      continue;
+    }
+    const list = grouped.get(key) ?? [];
+    list.push(block);
+    grouped.set(key, list);
+  }
+  const shownDays = days.length > 0 ? days : [...grouped.keys()];
 
   return (
-    <Card id="weekly-plan">
-      <CardHeader>
-        <CardTitle>Weekly plan</CardTitle>
-        <CardDescription>
-          {days.length ? `${range}. ` : ""}
-          Gemini places study blocks around the deadlines already on the desk.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {remote && remote.blocks.length > 0
-              ? `${remote.blocks.length} blocks on this week. Deadlines already on the desk stay put.`
-              : "No blocks yet. Plan this week to place study time around the deadlines already on the desk."}
-          </p>
-          <Button type="button" onClick={onPlan} disabled={busy}>
-            {busy ? "Planning…" : "Plan this week"}
-          </Button>
-        </div>
-        {error ? (
-          <p role="alert" className="rounded-lg border border-destructive/40 bg-card px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-        {errors.length > 0 ? (
-          <ul role="alert" className="grid gap-1 text-sm text-destructive">
-            {errors.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        ) : null}
-        {note ? <p className="line-clamp-3 text-sm text-muted-foreground">{note}</p> : null}
-        {!loaded && !remote ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Loading the week…
-          </p>
+    <section id="weekly-plan" style={{ border: "1px solid #d7d0c4", borderRadius: 12, padding: 16, background: "#fffdf8" }}>
+      <h2 style={{ fontSize: 28, margin: "0 0 8px" }}>Weekly plan</h2>
+      <p style={{ margin: "0 0 12px" }}>
+        {blocks.length > 0
+          ? `${blocks.length} blocks for the week of ${weekStart}.`
+          : "No blocks yet."}
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <button type="button" onClick={onPlan} disabled={busy} style={{ padding: "8px 12px" }}>
+          {busy ? "Planning…" : "Plan this week"}
+        </button>
+        <button type="button" onClick={reloadSaved} style={{ padding: "8px 12px" }}>
+          Reload saved plan
+        </button>
+      </div>
+      {error ? (
+        <p role="alert" style={{ border: "2px solid #b42318", background: "#fff4f2", color: "#7a1b12", padding: 12, borderRadius: 8 }}>
+          {error}
+        </p>
+      ) : null}
+      <div id="week-grid">
+        {blocks.length === 0 ? (
+          <p>The planner response has no blocks to show.</p>
         ) : (
-          <div id="week-grid" className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
-            {days.map((day) => {
-              const label = dayLabel(day);
-              const blocks = [...(byDay.get(day) ?? [])].sort((left, right) =>
-                left.start < right.start ? -1 : 1,
-              );
-              return (
-                <section key={day} className="rounded-lg bg-background px-3 py-2 ring-1 ring-foreground/10">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                    {label.weekday}
-                  </p>
-                  <p className="font-heading text-lg leading-tight">{label.date}</p>
-                  {blocks.length === 0 ? (
-                    <p className="mt-3 text-sm text-muted-foreground">Nothing scheduled</p>
-                  ) : (
-                    <div className="mt-3 grid gap-2">
-                      {blocks.map((block) => {
-                        const item = block.item_id ? byId.get(block.item_id) : undefined;
-                        const title = item?.title || block.reason || "Open block";
-                        const start = formatWhen(block.start);
-                        const end = formatWhen(block.end);
-                        return (
-                          <article
-                            key={block.id}
-                            className={
-                              block.status === "skipped"
-                                ? "rounded-md border-l-2 border-foreground/30 bg-muted px-2 py-1.5 opacity-60"
-                                : block.kind === "study"
-                                  ? "rounded-md border-l-2 border-primary bg-muted px-2 py-1.5"
-                                  : "rounded-md border-l-2 border-foreground/40 bg-muted px-2 py-1.5"
-                            }
-                          >
-                            <p className="text-xs text-muted-foreground">
-                              {start.time} – {end.time}
-                            </p>
-                            <p className="mt-1 text-sm leading-snug break-words">{title}</p>
-                            <div className="mt-1 flex flex-wrap items-center gap-1">
-                              <Badge variant={block.kind === "study" ? "secondary" : "outline"}>
-                                {KIND_LABEL[block.kind]}
-                              </Badge>
-                              {block.status !== "scheduled" ? (
-                                <span className="text-xs text-muted-foreground">{block.status}</span>
-                              ) : null}
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              );
-            })}
-          </div>
+          shownDays.map((day) => {
+            const dayBlocks = grouped.get(day) ?? [];
+            return (
+              <div key={day} style={{ marginTop: 16 }}>
+                <h3 style={{ margin: "0 0 6px", fontSize: 18 }}>{dayHeading(day)}</h3>
+                {dayBlocks.length === 0 ? (
+                  <p style={{ margin: 0, color: "#666" }}>Nothing scheduled</p>
+                ) : (
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {dayBlocks.map((block) => (
+                      <li key={block.id} style={{ marginBottom: 6 }}>
+                        <strong>
+                          {clock(block.start)} – {clock(block.end)}
+                        </strong>{" "}
+                        {blockTitle(block, items)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })
         )}
-      </CardContent>
-    </Card>
+        {outside.length > 0 ? (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={{ margin: "0 0 6px", fontSize: 18 }}>Also returned</h3>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {outside.map((block) => (
+                <li key={block.id}>
+                  <strong>
+                    {dateOf(block.start)} {clock(block.start)} – {clock(block.end)}
+                  </strong>{" "}
+                  {blockTitle(block, items)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+      <h3 style={{ marginTop: 20, fontSize: 16 }}>Planner response</h3>
+      <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, background: "#f4f1ea", padding: 12, maxHeight: 280, overflow: "auto" }}>
+        {debug}
+      </pre>
+    </section>
   );
 }
