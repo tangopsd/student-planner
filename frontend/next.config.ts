@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
+  allowedDevOrigins: ["127.0.0.1", "*.agent.cvm.dev"],
   async rewrites() {
     return [
       {

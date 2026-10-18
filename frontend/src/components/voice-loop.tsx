@@ -3,12 +3,10 @@
 import { useRef, useState } from "react";
 import { sendVoiceAudio, sendVoiceText } from "@/lib/api";
 import type { VoiceTurn } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 function MicMark({ slashed }: { slashed: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
       <rect x="9" y="3" width="6" height="11" rx="3" />
       <path d="M6 11a6 6 0 0 0 12 0" />
       <path d="M12 17v3" />
@@ -18,6 +16,8 @@ function MicMark({ slashed }: { slashed: boolean }) {
   );
 }
 
+const buttonStyle = { padding: "8px 12px" };
+
 export function VoiceLoop({
   weekStart,
   onPlanned,
@@ -25,16 +25,17 @@ export function VoiceLoop({
   weekStart?: string;
   onPlanned: (turn: VoiceTurn) => void;
 }) {
-  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [recording, setRecording] = useState(false);
+  const [listening, setListening] = useState(false);
   const [speak, setSpeak] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [reply, setReply] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const speakRef = useRef(false);
   const wantRecording = useRef(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const startedAt = useRef(0);
 
   function showTurn(turn: VoiceTurn) {
     setTranscript(turn.transcript);
@@ -46,15 +47,18 @@ export function VoiceLoop({
     }
   }
 
-  async function submitText(event: React.FormEvent) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || busy || recording) return;
+  async function submitText(event?: React.FormEvent) {
+    event?.preventDefault();
+    const text = inputRef.current?.value.trim() ?? "";
+    if (!text || busy || listening) {
+      if (!text) setError("Type a request, then press Send.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const turn = await sendVoiceText(text, weekStart);
-      setDraft("");
+      if (inputRef.current) inputRef.current.value = "";
       showTurn(turn);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send that request.");
@@ -80,12 +84,20 @@ export function VoiceLoop({
     }
   }
 
-  async function startTalking() {
+  function stopTracks(stream: MediaStream) {
+    stream.getTracks().forEach((track) => track.stop());
+  }
+
+  async function beginRecording() {
+    if (listening || busy) return;
     wantRecording.current = true;
+    startedAt.current = Date.now();
+    setListening(true);
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setError("This browser can't record. Type the request instead.");
       wantRecording.current = false;
+      setListening(false);
+      setError("This browser can't record. Type the request instead.");
       return;
     }
     let stream: MediaStream;
@@ -93,11 +105,13 @@ export function VoiceLoop({
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       wantRecording.current = false;
+      setListening(false);
       setError("Allow the microphone to talk, or type instead.");
       return;
     }
     if (!wantRecording.current) {
-      stream.getTracks().forEach((track) => track.stop());
+      stopTracks(stream);
+      setListening(false);
       return;
     }
     const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
@@ -107,36 +121,47 @@ export function VoiceLoop({
       if (event.data.size > 0) chunks.push(event.data);
     };
     recorder.onstop = () => {
-      stream.getTracks().forEach((track) => track.stop());
+      stopTracks(stream);
+      recorderRef.current = null;
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
       void sendRecording(blob);
     };
     recorderRef.current = recorder;
     recorder.start();
-    setRecording(true);
+    setListening(true);
   }
 
-  function stopTalking() {
+  function finishRecording() {
     wantRecording.current = false;
     const recorder = recorderRef.current;
+    setListening(false);
     if (recorder && recorder.state === "recording") {
       recorder.stop();
+      return;
     }
-    setRecording(false);
+    recorderRef.current = null;
   }
 
-  function onPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+  function onTalkPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
     if (busy) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    void startTalking();
+    if (listening) {
+      finishRecording();
+      return;
+    }
+    void beginRecording();
   }
 
-  function onPointerUp(event: React.PointerEvent<HTMLButtonElement>) {
+  function onTalkPointerUp(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    stopTalking();
+    const recorder = recorderRef.current;
+    const held = Date.now() - startedAt.current;
+    if (recorder?.state === "recording" && held > 350) {
+      finishRecording();
+    }
   }
 
   function toggleSpeak() {
@@ -152,42 +177,45 @@ export function VoiceLoop({
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <form onSubmit={submitText} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <Input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Move Thursday's quiz, or plan the rest of the week"
+      <form onSubmit={submitText} style={{ display: "grid", gap: 8 }}>
+        <input
+          ref={inputRef}
           aria-label="Request"
-          disabled={busy || recording}
-          className="min-w-64 flex-1 bg-white"
+          placeholder="Move Thursday's quiz, or plan the rest of the week"
+          disabled={busy || listening}
+          onChange={() => {
+            if (error) setError(null);
+          }}
+          style={{ width: "100%", boxSizing: "border-box", padding: "8px 12px" }}
         />
-        <Button type="submit" disabled={busy || recording || !draft.trim()}>
-          {busy && !recording ? "Sending…" : "Send"}
-        </Button>
-        <Button
-          type="button"
-          variant={recording ? "destructive" : "secondary"}
-          disabled={busy && !recording}
-          onPointerDown={onPointerDown}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-        >
-          {recording ? "Listening…" : "Hold to talk"}
-        </Button>
-        <Button
-          type="button"
-          variant={speak ? "default" : "outline"}
-          size="icon"
-          aria-pressed={speak}
-          aria-label={speak ? "Stop speaking replies" : "Speak replies"}
-          title={speak ? "Replies are spoken" : "Replies are silent"}
-          onClick={toggleSpeak}
-        >
-          <MicMark slashed={!speak} />
-        </Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button type="submit" disabled={busy} style={buttonStyle}>
+            {busy && !listening ? "Sending…" : "Send"}
+          </button>
+          <button
+            type="button"
+            disabled={busy && !listening}
+            onPointerDown={onTalkPointerDown}
+            onPointerUp={onTalkPointerUp}
+            onPointerCancel={onTalkPointerUp}
+            style={buttonStyle}
+          >
+            {listening ? "Stop and send" : "Hold to talk"}
+          </button>
+          <button
+            type="button"
+            aria-pressed={speak}
+            aria-label={speak ? "Stop speaking replies" : "Speak replies"}
+            onClick={toggleSpeak}
+            style={{ ...buttonStyle, display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <MicMark slashed={!speak} />
+            {speak ? "Speak on" : "Speak off"}
+          </button>
+        </div>
       </form>
       <p style={{ margin: "8px 0 0", color: "#666", fontSize: 14 }}>
-        Replies stay on screen. Speech stays off until you turn the mic on.
+        Hold the talk button, or press it and press Stop and send. Replies stay on screen. Speech stays off until Speak is on.
       </p>
       {error ? (
         <p role="alert" style={{ border: "2px solid #b42318", background: "#fff4f2", color: "#7a1b12", padding: 12, borderRadius: 8, marginTop: 8 }}>

@@ -1,6 +1,8 @@
 import { Desk } from "@/components/desk";
 import type { Profile, Week, WeekPlan } from "@/lib/types";
 
+export const instant = false;
+
 const backend = process.env.BACKEND_URL || "http://127.0.0.1:8741";
 
 async function loadJson<T>(path: string): Promise<{ data: T | null; error: string | null }> {
