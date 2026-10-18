@@ -44,7 +44,7 @@ cd backend
 .venv/bin/uvicorn main:app --host 0.0.0.0 --port 8741
 ```
 
-Leave the frontend running. `GEMINI_MODEL` is optional and defaults to `gemini-3.7-flash`. A key already exported in the shell wins over the file. The placeholder is ignored, so planning stays local until a real key is saved.
+Leave the frontend running. `GEMINI_MODEL` is optional and defaults to `gemini-3.6-flash`. If that model is busy, the desk tries another model and shows a short message only when all of them fail. A key already exported in the shell wins over the file. The placeholder is ignored, so planning stays local until a real key is saved.
 
 `POST /api/plan/gemini` schedules the deadlines already in `data/state.json`. With a key, Gemini calls the planner tools and the validator retries once, sending the validator text back on that retry. Without a key, the desk still builds that week locally from the same deadlines, and a typed move updates the week that is already there. If the retry still fails, the page shows one short sentence. **Plan this week** shows the blocks in the day columns. It does not regenerate the deadlines.
 

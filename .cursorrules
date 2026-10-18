@@ -33,7 +33,7 @@ Versions are per week. Posting a plan appends a new version and points `previous
 
 ## Planning
 
-Gemini planning lives in `backend/planning/`. `POST /api/plan/gemini` reads `GEMINI_API_KEY` from the environment. On startup the API loads `backend/.env` (gitignored). `GEMINI_MODEL` is optional and defaults to `gemini-3.7-flash`.
+Gemini planning lives in `backend/planning/`. `POST /api/plan/gemini` reads `GEMINI_API_KEY` from the environment. On startup the API loads `backend/.env` (gitignored). `GEMINI_MODEL` is optional and defaults to `gemini-3.6-flash`. If that model is busy or unavailable, transcription and planning try the next backup instead of showing the raw error.
 
 Tools: `list_items`, `add_item`, `move_item`, `create_blocks`, `move_block`, `delete_block`, `get_week_plan`, `set_constraint`, `mark_progress`, `undo_last_change`.
 

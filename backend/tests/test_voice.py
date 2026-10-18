@@ -106,6 +106,89 @@ def test_typed_reschedule_updates_the_saved_week(client, monkeypatch):
     assert len(client.get("/api/items").json()) == 1
 
 
+def test_transcription_uses_the_next_model_when_one_is_busy(monkeypatch):
+    from planning import gemini_plan
+    from voice_io import transcribe_audio
+
+    gemini_plan._preferred_model = None
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    seen = []
+
+    class Response:
+        text = "move saturday's assignment to tuesday"
+
+    def generate(model, contents):
+        del contents
+        seen.append(model)
+        if len(seen) == 1:
+            raise RuntimeError(
+                "503 UNAVAILABLE. {'error': {'code': 503, 'message': 'high demand'}}"
+            )
+        return Response()
+
+    text = transcribe_audio(b"abc", "audio/webm", generate=generate)
+    assert text == "move saturday's assignment to tuesday"
+    assert seen[0] == "gemini-3.6-flash"
+    assert seen[1] != seen[0]
+    gemini_plan._preferred_model = None
+
+
+def test_transcription_hides_the_raw_overload_error(monkeypatch):
+    from planning import gemini_plan
+    from planning.gemini_plan import GeminiError
+    from voice_io import transcribe_audio
+
+    gemini_plan._preferred_model = None
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+
+    def generate(model, contents):
+        del model, contents
+        raise RuntimeError("503 UNAVAILABLE. {'error': {'code': 503, 'message': 'high demand'}}")
+
+    try:
+        transcribe_audio(b"abc", "audio/webm", generate=generate)
+    except GeminiError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected a transcription error")
+    assert "503" not in message
+    assert "UNAVAILABLE" not in message
+    assert "busy" in message.lower()
+    gemini_plan._preferred_model = None
+
+
+def test_planner_skips_a_busy_model(monkeypatch):
+    from planning import gemini_plan
+    from planning.gemini_plan import GoogleGeminiModel
+
+    gemini_plan._preferred_model = None
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    seen = []
+
+    class Response:
+        text = "ok"
+        candidates = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            del contents, config
+            seen.append(model)
+            if model == "gemini-3.6-flash":
+                raise RuntimeError("503 UNAVAILABLE high demand")
+            return Response()
+
+    class Client:
+        models = Models()
+
+    turn = GoogleGeminiModel(client=Client()).complete([{"role": "user", "text": "Plan the week"}])
+    assert turn.text == "ok"
+    assert seen[0] == "gemini-3.6-flash"
+    assert seen[1] == "gemini-3.5-flash"
+    gemini_plan._preferred_model = None
+
+
 def test_empty_text_is_rejected(client):
     response = client.post("/api/voice", json={"text": "   "})
     assert response.status_code == 400

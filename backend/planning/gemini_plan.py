@@ -14,7 +14,15 @@ from store import Store
 from weeks import today_in_la
 
 MAX_ROUNDS = 8
-DEFAULT_MODEL = "gemini-3.7-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
+FALLBACK_MODELS = (
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite",
+)
+BUSY_MESSAGE = "Gemini is busy right now. Try again in a moment, or type the request."
+_preferred_model: str | None = None
 
 
 class GeminiError(Exception):
@@ -139,17 +147,46 @@ def build_declarations():
     ]
 
 
+def model_sequence() -> list[str]:
+    """Preferred model first, then backups that still accept this key."""
+    preferred = os.environ.get("GEMINI_MODEL", "").strip() or DEFAULT_MODEL
+    names = [preferred]
+    for name in FALLBACK_MODELS:
+        if name not in names:
+            names.append(name)
+    if _preferred_model and _preferred_model in names:
+        names.remove(_preferred_model)
+        names.insert(0, _preferred_model)
+    return names
+
+
+def remember_model(name: str) -> None:
+    global _preferred_model
+    _preferred_model = name
+
+
+def retryable_model_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in ("503", "429", "unavailable", "high demand", "404", "not_found", "no longer available")
+    )
+
+
 class GoogleGeminiModel:
     """Manual function calling. The SDK must not run the tools itself."""
 
-    def __init__(self):
-        key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not key:
-            raise GeminiError("Set GEMINI_API_KEY to plan with Gemini.", 400)
-        from google import genai
+    def __init__(self, client=None):
+        if client is None:
+            key = os.environ.get("GEMINI_API_KEY", "").strip()
+            if not key:
+                raise GeminiError("Set GEMINI_API_KEY to plan with Gemini.", 400)
+            from google import genai
 
-        self._client = genai.Client(api_key=key)
-        self._model_name = os.environ.get("GEMINI_MODEL", "").strip() or DEFAULT_MODEL
+            client = genai.Client(api_key=key)
+        self._client = client
+        self._models = model_sequence()
+        self._model_name = self._models[0]
         self._declarations = build_declarations()
 
     def complete(self, turns: list[dict]) -> ModelTurn:
@@ -197,17 +234,26 @@ class GoogleGeminiModel:
             tools=[types.Tool(function_declarations=self._declarations)],
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
-        try:
-            response = self._client.models.generate_content(
-                model=self._model_name,
-                contents=contents,
-                config=config,
-            )
-        except GeminiError:
-            raise
-        except Exception as exc:
-            raise GeminiError(f"Gemini request failed: {exc}", 502) from exc
-        return _turn_from_response(response)
+        last_error: Exception | None = None
+        for name in list(self._models):
+            try:
+                response = self._client.models.generate_content(
+                    model=name,
+                    contents=contents,
+                    config=config,
+                )
+            except GeminiError:
+                raise
+            except Exception as exc:
+                last_error = exc
+                if retryable_model_error(exc):
+                    continue
+                raise GeminiError(BUSY_MESSAGE, 502) from exc
+            remember_model(name)
+            self._model_name = name
+            self._models = [name] + [item for item in self._models if item != name]
+            return _turn_from_response(response)
+        raise GeminiError(BUSY_MESSAGE, 503) from last_error
 
 
 def _converse(model: Any, transcript: list[dict], context: ToolContext) -> str:
