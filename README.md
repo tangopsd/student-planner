@@ -182,14 +182,6 @@ student-planner/
 - [ ] Per-course workload and difficulty weighting
 - [ ] Export plan back to a calendar (`.ics`)
 
-## Contributing
-
-Contributions and ideas are welcome.
-
-1. Fork the repo and create a branch: `git checkout -b feature/your-feature`
-2. Make your changes and test them locally
-3. Commit with a clear message and push your branch
-4. Open a pull request describing what you changed and why
 
 ---
 
