@@ -13,3 +13,4 @@ data/state.json.tmp
 .DS_Store
 .idea/
 .vscode/
+.env

@@ -31,7 +31,20 @@ If you have no feed yet, use **Load sample calendar** or **Add by hand**.
 
 ## Weekly plan
 
-Set `GEMINI_API_KEY` before starting the backend to plan with Gemini. `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
+Put the Gemini key in `backend/.env` (that file is gitignored):
+
+```bash
+GEMINI_API_KEY=your_key_here
+```
+
+Replace `your_key_here`, save, then restart the API. The process reads `.env` only at startup. In the terminal where the API is running, press Ctrl+C, then:
+
+```bash
+cd backend
+.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8741
+```
+
+Leave the frontend running. `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`. A key already exported in the shell wins over the file. The placeholder is ignored, so planning stays local until a real key is saved.
 
 `POST /api/plan/gemini` schedules the deadlines already in `data/state.json`. With a key, Gemini calls the planner tools and the validator retries once, sending the validator text back on that retry. Without a key, the desk still builds that week locally from the same deadlines, and a typed move updates the week that is already there. If the retry still fails, the page shows one short sentence. **Plan this week** shows the blocks in the day columns. It does not regenerate the deadlines.
 

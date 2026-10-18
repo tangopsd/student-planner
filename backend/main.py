@@ -27,6 +27,9 @@ from models import Block, Item, ItemCreate, ItemPatch, Plan, PlanIn, Profile, Pr
 from paths import SAMPLE_ICS_PATH, STATE_PATH
 from store import Store, StoreError
 from weeks import group_items
+from env_load import load_project_env
+
+load_project_env()
 
 
 class ImportResult(BaseModel):
