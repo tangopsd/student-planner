@@ -2,7 +2,7 @@
 
 **An AI study planner for college students.** Quill pulls in your Canvas and calendar deadlines, then uses Gemini to turn them into a realistic weekly study plan that adapts as your semester changes.
 
-No account. No database. Clone it, add an API key, and it runs on your machine.
+Clone it, add an API key, and run it on your machine.
 
 <!-- TODO: add a screenshot or GIF of the weekly plan view here -->
 <!-- ![Quill screenshot](docs/screenshot.png) -->
@@ -37,8 +37,8 @@ Quill closes that gap. It collects deadlines from the places they already live a
 - **Canvas and iCal import.** Bring in assignments and due dates from Canvas or any standard `.ics` / iCal feed.
 - **AI-generated weekly plan.** Gemini breaks deadlines into study blocks and spreads them across the week based on due dates and workload.
 - **Adaptive re-planning.** Missed a block or got a new assignment? Regenerate and the plan adjusts around what's left.
-- **Zero-setup storage.** All state is saved to a single local JSON file. No login, no database server.
-- **Local-first.** Runs entirely on your machine; the only outbound call is to the Gemini API for planning.
+- **Simple local storage.** Your tasks and plan are saved to a single JSON file (`data/state.json`), so there's nothing extra to install or configure.
+- **Runs on your machine.** The only outbound call is to the Gemini API for planning.
 
 ## How It Works
 
@@ -171,7 +171,7 @@ student-planner/
 
 ## Data & Privacy
 
-- All planner state is stored **locally** in `data/state.json`. There is no account system and no remote database.
+- All planner state is stored **locally** in `data/state.json`.
 - When you generate a plan, your task titles, due dates, and schedule context are sent to the **Gemini API**. Don't include anything in your tasks you wouldn't want sent to that service.
 - Never commit your `.env` file or API key. Make sure `.env` and `data/state.json` are listed in `.gitignore`.
 
