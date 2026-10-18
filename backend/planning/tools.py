@@ -52,7 +52,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "add_item",
         "description": (
-            "Add one new manual deadline that is not already on the desk. "
+            "Add one new commitment that is not already on the desk: an appointment, "
+            "rehearsal, meeting, or deadline. Use this when the student says "
+            "'add a rehearsal' or 'I have a dentist appointment'. "
             "Do not use this to copy an existing deadline. Exams are locked."
         ),
         "parameters": {

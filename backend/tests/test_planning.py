@@ -524,6 +524,76 @@ def test_missing_api_key_schedules_existing_items(tmp_path, monkeypatch):
     assert [block.id for block in again["plan"].blocks] == [block.id for block in blocks]
 
 
+def test_typed_rehearsal_calls_add_item_and_shows_a_block(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    from planning.tools import execute_tool as real_tool
+
+    calls = []
+
+    def spy(ctx, name, args):
+        calls.append(name)
+        return real_tool(ctx, name, args)
+
+    monkeypatch.setattr("planning.local_plan.execute_tool", spy)
+    store = Store(tmp_path / "state.json")
+    store.add_item(make_item())
+    plan_week(store, "Plan the week", week_start="2026-10-19")
+    result = plan_week(store, "add a rehearsal on Friday from 7 to 9pm", week_start="2026-10-19")
+    assert result["valid"] is True, result
+    assert calls == ["add_item", "create_blocks"]
+    added = next(item for item in store.items() if item.title == "Rehearsal")
+    assert added.type == "event"
+    assert added.source == "manual"
+    block = next(block for block in result["plan"].blocks if block.item_id == added.id)
+    assert block.kind == "fixed"
+    assert block.start.startswith("2026-10-23T19:00")
+    assert block.end.startswith("2026-10-23T21:00")
+    assert "Friday" in result["message"]
+
+
+def test_typed_dentist_appointment_fills_one_hour(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    store.add_item(make_item())
+    first = plan_week(store, "Plan the week", week_start="2026-10-19")
+    kept = [block.id for block in first["plan"].blocks]
+    result = plan_week(store, "I have a dentist appointment Tuesday at 3", week_start="2026-10-19")
+    assert result["valid"] is True, result
+    added = next(item for item in store.items() if item.title == "Dentist appointment")
+    block = next(block for block in result["plan"].blocks if block.item_id == added.id)
+    assert block.kind == "fixed"
+    assert block.start.startswith("2026-10-20T15:00")
+    assert block.end.startswith("2026-10-20T16:00")
+    assert kept == [row.id for row in result["plan"].blocks if row.id in kept]
+
+
+def test_typed_homework_gets_a_study_block(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    result = plan_week(store, "add homework on Wednesday", week_start="2026-10-19")
+    assert result["valid"] is True, result
+    added = store.items()[0]
+    assert added.type == "assignment"
+    block = result["plan"].blocks[0]
+    assert block.item_id == added.id
+    assert block.kind == "study"
+    assert block.start.startswith("2026-10-21")
+
+
+def test_prompt_tells_gemini_to_call_add_item_for_a_new_event():
+    from planning.gemini_plan import _prompt
+
+    text = _prompt(
+        "add a rehearsal on Friday from 7 to 9pm",
+        "2026-10-19",
+        make_profile(),
+        [],
+    )
+    assert "call add_item" in text
+    assert "create_blocks" in text
+    assert "move_block" in text
+
+
 def test_reschedule_request_moves_the_matching_block(tmp_path, monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     store = Store(tmp_path / "state.json")

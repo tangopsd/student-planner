@@ -125,7 +125,7 @@ export function WeekPlanner({
           ref={inputRef}
           name="request"
           aria-label="What should change this week"
-          placeholder="Move Saturday's assignment to Tuesday"
+          placeholder="Add a rehearsal Friday from 7 to 9pm"
           style={{ flex: "1 1 220px", padding: "8px 10px" }}
         />
         <button type="submit" disabled={busy} style={{ padding: "8px 12px" }}>

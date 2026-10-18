@@ -39,4 +39,4 @@ Tools: `list_items`, `add_item`, `move_item`, `create_blocks`, `move_block`, `de
 
 The validator rejects overlaps, blocks outside waking hours, study and personal time over daily capacity, and any move of a locked deadline. A week that already has blocks can still be replanned. Invalid plans are retried once, and that retry sees the validator text. If it still fails, the page shows one short sentence and the raw validator line stays off the page. Without `GEMINI_API_KEY`, `plan_locally` still schedules the week from the deadlines already stored. Do not regenerate imported deadlines.
 
-The weekly plan is changed by typing a request and pressing Send. There is no microphone, mic toggle, Plan this week button, or Reload saved plan button. After a successful request, the weekly view uses the returned plan.
+The weekly plan is changed by typing a request and pressing Send. A move updates an existing block. A new commitment calls `add_item`, then a fixed block for an event or a study block for homework, and the weekly view shows that block. There is no microphone, mic toggle, Plan this week button, or Reload saved plan button.

@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from ical_parser import LOCAL_TZ
 from models import Block, Item, Plan, Profile
+from planning.tools import ToolContext, execute_tool
 from planning.validator import explain_plan_errors, validate_week
 from store import Store, StoreError
 
@@ -63,6 +64,7 @@ STOP_WORDS = {
     "up",
 }
 MOVE_WORDS = {"move", "reschedule", "shift", "push"}
+ADD_WORDS = {"add", "schedule", "book", "create"}
 MONTHS = {
     "january": 1,
     "jan": 1,
@@ -103,6 +105,9 @@ def plan_locally(store: Store, week_start: str, request: str = "") -> dict:
         locked_baseline,
         original_ids,
     )
+    added = _add_commitment(store, week_start, request, existing)
+    if added is not None:
+        return added
     rescheduled = _reschedule(store, week_start, request, existing)
     if rescheduled is not None:
         return rescheduled
@@ -148,6 +153,208 @@ def plan_locally(store: Store, week_start: str, request: str = "") -> dict:
         "attempts": 1,
         "message": message,
     }
+
+
+def _add_commitment(store: Store, week_start: str, request: str, existing: Plan | None) -> dict | None:
+    """Create a new commitment with add_item, then a block on the stated day."""
+    if not _is_new_request(request):
+        return None
+    mentions = _day_mentions(request, week_start)
+    if not mentions:
+        return _refused(store, week_start, "Tell me which day to add it.")
+    day = mentions[-1]
+    week = date.fromisoformat(week_start)
+    if day < week or day > week + timedelta(days=6):
+        return _refused(store, week_start, f"{_day_label(day)} is outside this week.")
+    title = _new_title(request)
+    item_type = _new_type(request)
+    span = _clock_span(request)
+    if span is None and item_type == "event":
+        return _refused(store, week_start, "Tell me what time, such as Friday from 7 to 9pm.")
+    if span is not None:
+        start = _on_clock(day, span[0])
+        end = _on_clock(day, span[1])
+        kind = "study" if item_type in ("assignment", "quiz") else "fixed"
+        due = end.isoformat() if kind == "study" else start.isoformat()
+    else:
+        start, end, kind = _study_slot(store, week_start, day, existing)
+        if start is None or end is None:
+            return _refused(store, week_start, f"{_day_label(day)} is full during waking hours.")
+        due = _on_clock(day, "00:00").isoformat()
+    items = store.items()
+    context = ToolContext(
+        store,
+        {item.id: item.due_or_start for item in items if item.locked},
+        {item.id for item in items},
+    )
+    created = execute_tool(
+        context,
+        "add_item",
+        {
+            "title": title,
+            "type": item_type,
+            "due_or_start": due,
+            "description": request[:500],
+        },
+    )
+    if created.get("error"):
+        return _refused(store, week_start, str(created["error"]))
+    item_id = created["item"]["id"]
+    if span is not None and not _time_is_open(store.profile(), store.latest_plan(week_start), start, end):
+        _undo(store)
+        return _refused(store, week_start, f"{_day_label(day)} already has something at that time.")
+    block = execute_tool(
+        context,
+        "create_blocks",
+        {
+            "week_start": week_start,
+            "blocks": [
+                {
+                    "item_id": item_id,
+                    "start": start.isoformat(),
+                    "end": end.isoformat(),
+                    "kind": kind,
+                    "reason": title,
+                }
+            ],
+        },
+    )
+    if block.get("error"):
+        _undo(store)
+        return _refused(store, week_start, str(block["error"]))
+    errors = _week_errors(store, week_start)
+    if errors:
+        _undo(store)
+        _undo(store)
+        return _failed(store, week_start, explain_plan_errors(errors))
+    return _ok(
+        store,
+        week_start,
+        f"Added {title} on {_day_label(day)}, {_clock(start)}–{_clock(end)}.",
+        1,
+    )
+
+
+def _study_slot(
+    store: Store,
+    week_start: str,
+    day: date,
+    existing: Plan | None,
+) -> tuple[datetime | None, datetime | None, str]:
+    placed = _place(store.profile(), existing, day, None, None, timedelta(hours=1), _on_clock(day, "23:59"))
+    if placed is None:
+        return None, None, "study"
+    return placed[0], placed[1], "study"
+
+
+def _time_is_open(profile: Profile, plan: Plan | None, start: datetime, end: datetime) -> bool:
+    wake = _on_clock(start.date(), profile.waking_hours.wake)
+    sleep = _on_clock(start.date(), profile.waking_hours.sleep)
+    if start < wake or end > sleep or end <= start or start.date() != end.date():
+        return False
+    occupied = _commitments(profile, start.date())
+    if plan is not None:
+        for block in plan.blocks:
+            block_start = _local(block.start)
+            if block_start.date() != start.date():
+                continue
+            occupied.append((block_start, _local(block.end)))
+    return not _overlaps(start, end, occupied)
+
+
+def _is_new_request(request: str) -> bool:
+    words = set(_words(request))
+    if words & MOVE_WORDS:
+        return False
+    if words & ADD_WORDS:
+        return True
+    lowered = request.lower()
+    return bool(re.search(r"\bi have\b", lowered) or re.search(r"\bi've got\b", lowered) or re.search(r"\bi need\b", lowered))
+
+
+def _new_type(request: str) -> str:
+    words = set(_words(request))
+    if words & {"exam", "midterm", "final"}:
+        return "exam"
+    if "quiz" in words:
+        return "quiz"
+    if words & {"assignment", "homework", "hw", "hw1", "hw2"}:
+        return "assignment"
+    return "event"
+
+
+def _new_title(request: str) -> str:
+    skipped = STOP_WORDS | ADD_WORDS | set(WEEKDAY_INDEX) | set(MONTHS) | {
+        "from",
+        "at",
+        "to",
+        "am",
+        "pm",
+        "i",
+        "have",
+        "got",
+        "need",
+        "new",
+        "ve",
+    }
+    kept = []
+    for word in _words(request):
+        if word in skipped or re.fullmatch(r"\d{1,2}(?::\d{2})?(?:am|pm)?", word):
+            continue
+        kept.append(word)
+    title = " ".join(kept).strip() or "New event"
+    return title[0].upper() + title[1:]
+
+
+def _clock_span(request: str) -> tuple[str, str] | None:
+    text = request.lower()
+    ranged = re.search(
+        r"(?:from\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*(?:to|–|-)\s*(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?",
+        text,
+    )
+    if ranged:
+        start = _clock_label(int(ranged.group(1)), ranged.group(2), ranged.group(3), ranged.group(6))
+        end = _clock_label(int(ranged.group(4)), ranged.group(5), ranged.group(6), ranged.group(3))
+        if start and end and end > start:
+            return start, end
+    at = re.search(r"\bat\s+(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?", text)
+    if not at:
+        return None
+    start = _clock_label(int(at.group(1)), at.group(2), at.group(3), None)
+    if start is None:
+        return None
+    hour, minute = start.split(":")
+    end_hour = int(hour) + 1
+    if end_hour > 23:
+        return None
+    return start, f"{end_hour:02d}:{minute}"
+
+
+def _suffix(token: str | None) -> str | None:
+    if not token:
+        return None
+    token = token.replace(".", "")
+    if token.startswith("p"):
+        return "pm"
+    if token.startswith("a"):
+        return "am"
+    return None
+
+
+def _clock_label(hour: int, minute: str | None, suffix: str | None, other: str | None) -> str | None:
+    if hour > 23:
+        return None
+    marker = _suffix(suffix) or _suffix(other)
+    if marker == "pm" and hour < 12:
+        hour += 12
+    elif marker == "am" and hour == 12:
+        hour = 0
+    elif marker is None and 1 <= hour <= 7:
+        hour += 12
+    mins = int(minute or "0")
+    if hour > 23 or not 0 <= mins <= 59:
+        return None
+    return f"{hour:02d}:{mins:02d}"
 
 
 def _reschedule(store: Store, week_start: str, request: str, existing: Plan | None) -> dict | None:

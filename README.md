@@ -46,7 +46,7 @@ cd backend
 
 Leave the frontend running. `GEMINI_MODEL` is optional and defaults to `gemini-3.6-flash`. If that model is busy, the desk tries another model and shows a short message only when all of them fail. A key already exported in the shell wins over the file. The placeholder is ignored, so planning stays local until a real key is saved.
 
-Type a change in the weekly plan, such as “move Saturday's assignment to Tuesday”, and press **Send**. The week updates from the deadlines already stored. The page does not record audio, and it has no Plan this week or Reload saved plan button. A successful request replaces the blocks in the weekly list.
+Type a change in the weekly plan and press **Send**. A move updates a block that is already there. A new commitment, such as “add a rehearsal on Friday from 7 to 9pm” or “I have a dentist appointment Tuesday at 3”, is added and then shown on that day. The page does not record audio, and it has no Plan this week or Reload saved plan button. A successful request replaces the blocks in the weekly list.
 
 ## Tests
 
