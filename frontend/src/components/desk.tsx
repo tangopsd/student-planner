@@ -23,14 +23,21 @@ function nextOpen(items: Item[]): Item | undefined {
 export function Desk({
   initialPlans = [],
   initialPlanError = null,
+  initialWeeks = null,
+  initialProfile = null,
+  initialDeskError = null,
 }: {
   initialPlans?: WeekPlan[];
   initialPlanError?: string | null;
+  initialWeeks?: Week[] | null;
+  initialProfile?: Profile | null;
+  initialDeskError?: string | null;
 }) {
-  const [weeks, setWeeks] = useState<Week[] | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [weeks, setWeeks] = useState<Week[] | null>(initialWeeks);
+  const [profile, setProfile] = useState<Profile | null>(initialProfile);
   const [profileVersion, setProfileVersion] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(initialWeeks === null && !initialDeskError);
+  const [error, setError] = useState<string | null>(initialDeskError);
 
   function refreshWeeks() {
     return getWeeks().then((weekBody) => {
@@ -51,6 +58,9 @@ export function Desk({
       .catch((err: unknown) => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Couldn't load the desk.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -59,6 +69,7 @@ export function Desk({
 
   function retry() {
     setError(null);
+    if (weeks === null) setLoading(true);
     Promise.all([getWeeks(), getProfile()])
       .then(([weekBody, profileBody]) => {
         setWeeks(weekBody.weeks);
@@ -68,6 +79,9 @@ export function Desk({
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Couldn't load the desk.");
+      })
+      .finally(() => {
+        setLoading(false);
       });
   }
 
@@ -126,17 +140,17 @@ export function Desk({
           />
         </div>
 
-        {weeks === null && !error ? (
+        {loading && weeks === null && !error ? (
           <div role="status" className="mb-6 grid gap-3" aria-label="Loading deadlines">
             <p className="text-sm text-muted-foreground">Loading your plan…</p>
             <div className="h-24 animate-pulse rounded-xl bg-muted" />
             <div className="h-24 animate-pulse rounded-xl bg-muted" />
           </div>
-        ) : (
+        ) : weeks ? (
           <div className="mb-6">
-            <WeekList weeks={weeks ?? []} onChanged={refreshWeeks} />
+            <WeekList weeks={weeks} onChanged={refreshWeeks} />
           </div>
-        )}
+        ) : null}
 
         <details className="rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10">
           <summary className="cursor-pointer text-sm font-medium">
