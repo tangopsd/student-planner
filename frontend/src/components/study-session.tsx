@@ -447,7 +447,7 @@ export function StudySession({
     event.preventDefault();
     const text = command.trim();
     if (!text) return;
-    const extend = /(?:extend|add|need)\s+(\d+)\s*(?:min|minutes|m)\b/i.exec(text);
+    const extend = /(?:extend|add|need)(?:\s+by)?\s+(\d+)\s*(?:min|minutes|m)\b/i.exec(text);
     if (extend) {
       addMinutes(Number(extend[1]));
       setCommand("");
