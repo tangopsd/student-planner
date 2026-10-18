@@ -1,6 +1,6 @@
 """Schedule one week from deadlines already on the desk.
 
-Used when GEMINI_API_KEY is not set, so Plan this week still returns blocks.
+Applies a typed request to the week already stored on the desk.
 """
 
 from __future__ import annotations

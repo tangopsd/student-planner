@@ -86,20 +86,18 @@ def plan_week(
 ) -> dict:
     """Plan one week from the deadlines already in the store.
 
-    Tool calls run against that store. The validator runs after the model
-    stops, and the conversation continues once if the week is invalid.
+    Typed requests are applied locally so the week updates without waiting on
+    Gemini. A model passed in by tests still uses the tool-calling loop.
     """
     text = request.strip()
     if not text:
         raise GeminiError("Say what you want planned", 400)
     items = store.items()
     target = _require_monday(week_start) if week_start else choose_week_start(items).isoformat()
-    if model is None and not os.environ.get("GEMINI_API_KEY", "").strip():
+    if model is None:
         from planning.local_plan import plan_locally
 
         return plan_locally(store, target, text)
-    if model is None:
-        model = GoogleGeminiModel()
 
     profile = store.profile()
     original_ids = {item.id for item in items}

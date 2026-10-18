@@ -46,9 +46,7 @@ cd backend
 
 Leave the frontend running. `GEMINI_MODEL` is optional and defaults to `gemini-3.6-flash`. If that model is busy, the desk tries another model and shows a short message only when all of them fail. A key already exported in the shell wins over the file. The placeholder is ignored, so planning stays local until a real key is saved.
 
-`POST /api/plan/gemini` schedules the deadlines already in `data/state.json`. With a key, Gemini calls the planner tools and the validator retries once, sending the validator text back on that retry. Without a key, the desk still builds that week locally from the same deadlines, and a typed move updates the week that is already there. If the retry still fails, the page shows one short sentence. **Plan this week** shows the blocks in the day columns. It does not regenerate the deadlines.
-
-The same planner answers typed and spoken requests at `POST /api/voice`. Type a change and press **Send**, or hold **Hold to talk**. The transcript and the reply stay on the page. The mic toggle is off until you turn it on; only then does the desk speak the reply. Audio transcription needs `GEMINI_API_KEY`. Typed requests still plan without it. A successful turn replaces the blocks in the weekly list.
+Type a change in the weekly plan, such as “move Saturday's assignment to Tuesday”, and press **Send**. The week updates from the deadlines already stored. The page does not record audio, and it has no Plan this week or Reload saved plan button. A successful request replaces the blocks in the weekly list.
 
 ## Tests
 

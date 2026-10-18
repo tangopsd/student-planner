@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { generatePlan, getPlans } from "@/lib/api";
-import type { Block, Item, VoiceTurn, WeekPlan } from "@/lib/types";
-import { VoiceLoop } from "@/components/voice-loop";
+import { useRef, useState } from "react";
+import { sendVoiceText } from "@/lib/api";
+import type { Block, Item, WeekPlan } from "@/lib/types";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -62,66 +61,36 @@ export function WeekPlanner({
   const [plan, setPlan] = useState<WeekPlan | null>(starting);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialPlanError);
+  const [reply, setReply] = useState("");
   const [debug, setDebug] = useState(() =>
     JSON.stringify(starting ? { source: "saved plan", plan: starting } : { source: "saved plan", plans: initialPlans }, null, 2),
   );
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  async function onPlan() {
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const text = inputRef.current?.value.trim() ?? "";
+    if (!text || busy) {
+      if (!text) setError("Type a request, then press Send.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const result = await generatePlan(
-        "Plan study blocks for the target week from the deadlines already on the desk. Do not add or replace those deadlines.",
-      );
-      console.log("POST /api/plan/gemini", result);
-      setDebug(JSON.stringify(result, null, 2));
-      const next = result.plan;
-      setPlan(next);
-      const count = next?.blocks?.length ?? 0;
-      if (result.errors?.length) {
-        setError(result.errors.join(" "));
-      } else if (!next || count === 0) {
-        setError(result.message || "The planner returned no blocks.");
-      } else if (!result.valid) {
-        setError(result.message || "The planner returned a plan that failed its checks.");
-      }
+      const turn = await sendVoiceText(text, plan?.week_start);
+      if (inputRef.current) inputRef.current.value = "";
+      setReply(turn.reply);
+      setDebug(JSON.stringify(turn, null, 2));
+      if (turn.plan) setPlan(turn.plan);
+      if (turn.errors?.length) setError(turn.errors.join(" "));
+      else if (!turn.valid) setError(turn.reply || "The planner could not update the week.");
+      else setError(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not plan the week.";
-      console.log("POST /api/plan/gemini failed", err);
+      const message = err instanceof Error ? err.message : "Could not send that request.";
       setError(message);
       setDebug(JSON.stringify({ error: message }, null, 2));
     } finally {
       setBusy(false);
-    }
-  }
-
-  function applyVoice(turn: VoiceTurn) {
-    console.log("POST /api/voice", turn);
-    setDebug(JSON.stringify(turn, null, 2));
-    if (turn.plan) setPlan(turn.plan);
-    if (turn.errors?.length) {
-      setError(turn.errors.join(" "));
-    } else if (!turn.valid) {
-      setError(turn.reply || "The planner could not update the week.");
-    } else {
-      setError(null);
-    }
-  }
-
-  async function reloadSaved() {
-    try {
-      const rows = await getPlans();
-      console.log("GET /api/plans", rows);
-      const next = latestPlan(rows);
-      setPlan(next);
-      setDebug(JSON.stringify(rows, null, 2));
-      if (!next || next.blocks.length === 0) {
-        setError("Saved plans do not contain any blocks.");
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not load saved plans.";
-      setError(message);
-      setDebug(JSON.stringify({ error: message }, null, 2));
     }
   }
 
@@ -151,15 +120,19 @@ export function WeekPlanner({
           ? `${blocks.length} blocks for the week of ${weekStart}.`
           : "No blocks yet."}
       </p>
-      <VoiceLoop weekStart={weekStart ?? undefined} onPlanned={applyVoice} />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <button type="button" onClick={onPlan} disabled={busy} style={{ padding: "8px 12px" }}>
-          {busy ? "Planning…" : "Plan this week"}
+      <form onSubmit={onSubmit} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <input
+          ref={inputRef}
+          name="request"
+          aria-label="What should change this week"
+          placeholder="Move Saturday's assignment to Tuesday"
+          style={{ flex: "1 1 220px", padding: "8px 10px" }}
+        />
+        <button type="submit" disabled={busy} style={{ padding: "8px 12px" }}>
+          {busy ? "Updating…" : "Send"}
         </button>
-        <button type="button" onClick={reloadSaved} style={{ padding: "8px 12px" }}>
-          Reload saved plan
-        </button>
-      </div>
+      </form>
+      {reply ? <p style={{ marginTop: 0 }}>Desk: {reply}</p> : null}
       {error ? (
         <p role="alert" style={{ border: "2px solid #b42318", background: "#fff4f2", color: "#7a1b12", padding: 12, borderRadius: 8 }}>
           {error}
