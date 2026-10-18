@@ -580,6 +580,85 @@ def test_typed_homework_gets_a_study_block(tmp_path, monkeypatch):
     assert block.start.startswith("2026-10-21")
 
 
+def test_typed_delete_removes_the_friday_rehearsal(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    from planning.tools import execute_tool as real_tool
+
+    calls = []
+
+    def spy(ctx, name, args):
+        calls.append(name)
+        return real_tool(ctx, name, args)
+
+    monkeypatch.setattr("planning.local_plan.execute_tool", spy)
+    store = Store(tmp_path / "state.json")
+    plan_week(store, "add a rehearsal on Friday from 7 to 9pm", week_start="2026-10-19")
+    calls.clear()
+    result = plan_week(store, "delete the rehearsal on Friday", week_start="2026-10-19")
+    assert result["valid"] is True, result
+    assert calls == ["delete_block"]
+    assert result["plan"].blocks == []
+    assert result["message"] == "Removed Rehearsal from Friday Oct 23."
+
+
+def test_typed_remove_finds_the_dentist_without_a_day(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    plan_week(store, "I have a dentist appointment Tuesday at 3", week_start="2026-10-19")
+    plan_week(store, "add a club meeting on Wednesday from 4 to 5pm", week_start="2026-10-19")
+    result = plan_week(store, "remove my dentist appointment", week_start="2026-10-19")
+    assert result["valid"] is True, result
+    assert "Removed Dentist appointment" in result["message"]
+    titles = [block.reason for block in result["plan"].blocks]
+    assert "Dentist appointment" not in titles
+    assert any("Club meeting" in title for title in titles)
+
+
+def test_cancel_on_a_day_leaves_the_other_block(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    plan_week(store, "add a club meeting on Wednesday from 4 to 5pm", week_start="2026-10-19")
+    plan_week(store, "add a club meeting on Friday from 4 to 5pm", week_start="2026-10-19")
+    result = plan_week(store, "cancel the club meeting on Wednesday", week_start="2026-10-19")
+    assert result["valid"] is True, result
+    assert "Wednesday" in result["message"]
+    assert len(result["plan"].blocks) == 1
+    assert result["plan"].blocks[0].start.startswith("2026-10-23")
+
+
+def test_locked_exam_is_not_deleted(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    exam = make_item(
+        id="exam-1",
+        title="Midterm Exam",
+        type="exam",
+        locked=True,
+        estimated_effort_hours=None,
+        due_or_start="2026-10-21T15:30:00-07:00",
+    )
+    store.add_item(exam)
+    store.create_blocks(
+        "2026-10-19",
+        [
+            make_block(
+                id="exam-block",
+                item_id="exam-1",
+                start="2026-10-21T15:30:00-07:00",
+                end="2026-10-21T16:30:00-07:00",
+                kind="fixed",
+            )
+        ],
+        "seed",
+        "2026-10-17T16:00:00-07:00",
+    )
+    result = plan_week(store, "delete the midterm on Wednesday", week_start="2026-10-19")
+    assert result["valid"] is False
+    assert "locked" in result["message"].lower()
+    assert result["plan"].blocks[0].id == "exam-block"
+    assert store.items()[0].locked is True
+
+
 def test_prompt_tells_gemini_to_call_add_item_for_a_new_event():
     from planning.gemini_plan import _prompt
 

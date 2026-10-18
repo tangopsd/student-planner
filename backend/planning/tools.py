@@ -134,7 +134,10 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "delete_block",
-        "description": "Remove one block from the latest plan.",
+        "description": (
+            "Remove one scheduled block when the student says delete, remove, or cancel. "
+            "Do not use this on a locked exam."
+        ),
         "parameters": {
             "type": "object",
             "properties": {"block_id": {"type": "string"}},

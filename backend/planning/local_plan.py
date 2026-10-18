@@ -65,6 +65,7 @@ STOP_WORDS = {
 }
 MOVE_WORDS = {"move", "reschedule", "shift", "push"}
 ADD_WORDS = {"add", "schedule", "book", "create"}
+DELETE_WORDS = {"delete", "remove", "cancel", "drop"}
 MONTHS = {
     "january": 1,
     "jan": 1,
@@ -105,6 +106,9 @@ def plan_locally(store: Store, week_start: str, request: str = "") -> dict:
         locked_baseline,
         original_ids,
     )
+    removed = _remove_commitment(store, week_start, request, existing)
+    if removed is not None:
+        return removed
     added = _add_commitment(store, week_start, request, existing)
     if added is not None:
         return added
@@ -153,6 +157,68 @@ def plan_locally(store: Store, week_start: str, request: str = "") -> dict:
         "attempts": 1,
         "message": message,
     }
+
+
+def _remove_commitment(store: Store, week_start: str, request: str, existing: Plan | None) -> dict | None:
+    """Remove one scheduled block with delete_block. A locked exam stays."""
+    if not _is_delete_request(request):
+        return None
+    if existing is None or not existing.blocks:
+        return _refused(store, week_start, "Nothing on this week to remove.")
+    mentions = _day_mentions(request, week_start)
+    day = mentions[-1] if mentions else None
+    pool = list(existing.blocks)
+    if day is not None:
+        pool = [block for block in pool if _local(block.start).date() == day]
+        if not pool:
+            return _refused(store, week_start, f"Nothing is scheduled on {_day_label(day)} to remove.")
+    chosen = _best_block(pool, store.items(), request)
+    if chosen is None:
+        if day is not None and len(pool) > 1:
+            return _refused(store, week_start, f"Which block on {_day_label(day)} should I remove?")
+        return _refused(store, week_start, "I couldn't find that on this week.")
+    item = _item_for(store.items(), chosen.item_id)
+    if item is not None and item.locked:
+        return _refused(store, week_start, f"{item.title} is locked, so I left it on the week.")
+    items = store.items()
+    context = ToolContext(
+        store,
+        {row.id: row.due_or_start for row in items if row.locked},
+        {row.id for row in items},
+    )
+    deleted = execute_tool(context, "delete_block", {"block_id": chosen.id})
+    if deleted.get("error"):
+        return _refused(store, week_start, str(deleted["error"]))
+    errors = [
+        error
+        for error in _week_errors(store, week_start)
+        if "No blocks were scheduled" not in error
+    ]
+    if errors:
+        _undo(store)
+        return _failed(store, week_start, explain_plan_errors(errors))
+    title = item.title if item is not None else (chosen.reason or "that block")
+    return _ok(store, week_start, f"Removed {title} from {_day_label(_local(chosen.start).date())}.", 1)
+
+
+def _best_block(blocks: list[Block], items: list[Item], request: str) -> Block | None:
+    by_id = {item.id: item for item in items}
+    scored: list[tuple[int, Block]] = []
+    for block in blocks:
+        item = by_id.get(block.item_id or "")
+        title = item.title if item is not None else (block.reason or "")
+        scored.append((_title_score(title, request), block))
+    best = max(score for score, _block in scored)
+    winners = [block for score, block in scored if score == best and score > 0]
+    if len(winners) == 1:
+        return winners[0]
+    if len(blocks) == 1 and best == 0:
+        return blocks[0]
+    return None
+
+
+def _is_delete_request(request: str) -> bool:
+    return bool(set(_words(request)) & DELETE_WORDS)
 
 
 def _add_commitment(store: Store, week_start: str, request: str, existing: Plan | None) -> dict | None:
@@ -264,7 +330,7 @@ def _time_is_open(profile: Profile, plan: Plan | None, start: datetime, end: dat
 
 def _is_new_request(request: str) -> bool:
     words = set(_words(request))
-    if words & MOVE_WORDS:
+    if words & MOVE_WORDS or words & DELETE_WORDS:
         return False
     if words & ADD_WORDS:
         return True
@@ -284,7 +350,7 @@ def _new_type(request: str) -> str:
 
 
 def _new_title(request: str) -> str:
-    skipped = STOP_WORDS | ADD_WORDS | set(WEEKDAY_INDEX) | set(MONTHS) | {
+    skipped = STOP_WORDS | ADD_WORDS | DELETE_WORDS | set(WEEKDAY_INDEX) | set(MONTHS) | {
         "from",
         "at",
         "to",
