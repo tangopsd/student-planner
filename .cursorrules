@@ -27,7 +27,7 @@ Versions are per week. Posting a plan appends a new version and points `previous
 
 - Time zone is America/Los_Angeles. Weeks start Monday. A naive datetime from the form is Pacific wall time.
 - Exam and midterm titles classify as `exam` and are locked. Re-import keeps effort and status for an existing id.
-- Feed imports use source `canvas`. Typed deadlines use source `manual`. `voice` is a stored source with no capture UI yet.
+- Feed imports use source `canvas`. Typed deadlines use source `manual`. `voice` stays a stored source. The page also records or types a planning request; that request is not a deadline item.
 - Do not add login, accounts, or a database.
 - Keep the frontend on shadcn/ui primitives already in `frontend/src/components/ui`.
 
@@ -37,4 +37,6 @@ Gemini planning lives in `backend/planning/`. `POST /api/plan/gemini` reads `GEM
 
 Tools: `list_items`, `add_item`, `move_item`, `create_blocks`, `move_block`, `delete_block`, `get_week_plan`, `set_constraint`, `mark_progress`, `undo_last_change`.
 
-The validator rejects overlaps, blocks outside waking hours, study and personal time over daily capacity, and any move of a locked deadline. Invalid Gemini plans are retried once. Without `GEMINI_API_KEY`, `plan_locally` still schedules the week from the deadlines already stored. Do not regenerate imported deadlines. Do not modify the voice loop.
+The validator rejects overlaps, blocks outside waking hours, study and personal time over daily capacity, and any move of a locked deadline. Invalid Gemini plans are retried once. Without `GEMINI_API_KEY`, `plan_locally` still schedules the week from the deadlines already stored. Do not regenerate imported deadlines.
+
+`POST /api/voice` accepts typed text or an audio recording. Audio is transcribed with Gemini when `GEMINI_API_KEY` is set, then the transcript is sent through `plan_week`. Do not rebuild the planner for speech. The page always shows the transcript and the reply. A mic toggle, off by default, is the only thing that speaks the reply. After a successful turn, the weekly view uses the returned plan.

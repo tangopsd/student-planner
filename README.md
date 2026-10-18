@@ -35,6 +35,8 @@ Set `GEMINI_API_KEY` before starting the backend to plan with Gemini. `GEMINI_MO
 
 `POST /api/plan/gemini` schedules the deadlines already in `data/state.json`. With a key, Gemini calls the planner tools and the validator retries once. Without a key, the desk still builds that week locally from the same deadlines. **Plan this week** shows the blocks in the day columns. It does not regenerate the deadlines.
 
+The same planner answers typed and spoken requests at `POST /api/voice`. Type a change and press **Send**, or hold **Hold to talk**. The transcript and the reply stay on the page. The mic toggle is off until you turn it on; only then does the desk speak the reply. Audio transcription needs `GEMINI_API_KEY`. Typed requests still plan without it. A successful turn replaces the blocks in the weekly list.
+
 ## Tests
 
 ```bash
@@ -69,5 +71,6 @@ Importing the same feed again refreshes title, course, type, time, and descripti
 | `GET` | `/api/classify?title=` | Keyword type (`matched` is false when nothing hit) |
 | `GET` / `POST` | `/api/plans` | List plan versions, or append the next version for a Monday |
 | `POST` | `/api/plan/gemini` | JSON `{"request": "Plan this week", "week_start": "YYYY-MM-DD"}`. `week_start` is optional. |
+| `POST` | `/api/voice` | JSON `{"text": "...", "week_start": "YYYY-MM-DD"}`, or multipart with `text` or an `audio` file. Returns the transcript, reply, and updated plan. |
 
 Gemini tools are `list_items`, `add_item`, `move_item`, `create_blocks`, `move_block`, `delete_block`, `get_week_plan`, `set_constraint`, `mark_progress`, and `undo_last_change`. The validator rejects overlapping blocks, blocks outside waking hours, study time over the daily capacity, and any move of a locked deadline. Study and personal time count toward capacity. Fixed and buffer blocks do not. A deadline stored at local midnight can be studied until sleep that day.

@@ -5,6 +5,7 @@ import type {
   Item,
   ItemType,
   Profile,
+  VoiceTurn,
   Week,
   WeekPlan,
 } from "@/lib/types";
@@ -132,4 +133,23 @@ export function generatePlan(requestText: string, weekStart?: string) {
       ...(weekStart ? { week_start: weekStart } : {}),
     }),
   });
+}
+
+export function sendVoiceText(text: string, weekStart?: string) {
+  return request<VoiceTurn>("/api/voice", {
+    method: "POST",
+    body: JSON.stringify({
+      text,
+      ...(weekStart ? { week_start: weekStart } : {}),
+    }),
+  });
+}
+
+export function sendVoiceAudio(audio: Blob, weekStart?: string) {
+  const body = new FormData();
+  const type = audio.type || "audio/webm";
+  const extension = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
+  body.append("audio", audio, `request.${extension}`);
+  if (weekStart) body.append("week_start", weekStart);
+  return request<VoiceTurn>("/api/voice", { method: "POST", body });
 }

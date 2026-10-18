@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from planning.gemini_plan import GeminiError, plan_week
+from voice_io import transcribe_audio
 from calendar_io import (
     MAX_BYTES,
     CalendarError,
@@ -59,6 +60,16 @@ class GeminiPlanOut(BaseModel):
     errors: list[str]
     attempts: int
     message: str
+
+
+class VoiceOut(BaseModel):
+    transcript: str
+    reply: str
+    week_start: str
+    plan: Plan | None = None
+    valid: bool
+    errors: list[str]
+    attempts: int
 
 
 def create_app(state_path: Path | None = None) -> FastAPI:
@@ -209,6 +220,26 @@ def create_app(state_path: Path | None = None) -> FastAPI:
         except GeminiError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
 
+    @app.post("/api/voice", response_model=VoiceOut)
+    async def post_voice(request: Request, store: Store = Depends(get_store)) -> dict:
+        text, week = await read_voice(request)
+        if week:
+            week = require_monday(week)
+        try:
+            result = plan_week(store, text, week)
+        except GeminiError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+        reply = (result.get("message") or "").strip() or "Updated the week."
+        return {
+            "transcript": text,
+            "reply": reply,
+            "week_start": result["week_start"],
+            "plan": result["plan"],
+            "valid": result["valid"],
+            "errors": result["errors"],
+            "attempts": result["attempts"],
+        }
+
     return app
 
 
@@ -273,6 +304,51 @@ def import_raw(raw: str, store: Store) -> ImportResult:
     except StoreError as exc:
         raise HTTPException(400, str(exc)) from exc
     return ImportResult.model_validate(result)
+
+
+async def read_voice(request: Request) -> tuple[str, str | None]:
+    """Return the spoken or typed request, plus an optional Monday."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Send a JSON body with text") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "Send a JSON body with text")
+        text = str(body.get("text") or "").strip()
+        if not text:
+            raise HTTPException(400, "Say what you want planned")
+        if len(text) > 4000:
+            raise HTTPException(400, "That request is too long")
+        week = str(body.get("week_start") or "").strip() or None
+        return text, week
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        typed = form.get("text")
+        week_value = form.get("week_start")
+        week = week_value.strip() if isinstance(week_value, str) and week_value.strip() else None
+        if isinstance(typed, str) and typed.strip():
+            text = typed.strip()
+            if len(text) > 4000:
+                raise HTTPException(400, "That request is too long")
+            return text, week
+        upload = form.get("audio")
+        if upload is None or not hasattr(upload, "read"):
+            raise HTTPException(400, "Send text or an audio recording")
+        data = await upload.read()
+        if not data:
+            raise HTTPException(400, "That recording was empty")
+        if len(data) > 8_000_000:
+            raise HTTPException(400, "That recording is too long")
+        mime = (getattr(upload, "content_type", None) or "audio/webm").split(";", 1)[0].strip()
+        if mime.startswith("video/webm") or not mime:
+            mime = "audio/webm"
+        try:
+            return transcribe_audio(data, mime), week
+        except GeminiError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+    raise HTTPException(status_code=415, detail="Send JSON text or an audio recording")
 
 
 async def read_feed(request: Request) -> str:

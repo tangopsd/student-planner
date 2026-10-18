@@ -92,3 +92,13 @@ export type GeminiPlanResult = {
   attempts: number;
   message: string;
 };
+
+export type VoiceTurn = {
+  transcript: string;
+  reply: string;
+  week_start: string;
+  plan: WeekPlan | null;
+  valid: boolean;
+  errors: string[];
+  attempts: number;
+};

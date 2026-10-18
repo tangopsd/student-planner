@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { generatePlan, getPlans } from "@/lib/api";
-import type { Block, Item, WeekPlan } from "@/lib/types";
+import type { Block, Item, VoiceTurn, WeekPlan } from "@/lib/types";
+import { VoiceLoop } from "@/components/voice-loop";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -94,6 +95,19 @@ export function WeekPlanner({
     }
   }
 
+  function applyVoice(turn: VoiceTurn) {
+    console.log("POST /api/voice", turn);
+    setDebug(JSON.stringify(turn, null, 2));
+    if (turn.plan) setPlan(turn.plan);
+    if (turn.errors?.length) {
+      setError(turn.errors.join(" "));
+    } else if (turn.plan && !turn.valid) {
+      setError(turn.reply || "The planner returned a plan that failed its checks.");
+    } else {
+      setError(null);
+    }
+  }
+
   async function reloadSaved() {
     try {
       const rows = await getPlans();
@@ -137,6 +151,7 @@ export function WeekPlanner({
           ? `${blocks.length} blocks for the week of ${weekStart}.`
           : "No blocks yet."}
       </p>
+      <VoiceLoop weekStart={weekStart ?? undefined} onPlanned={applyVoice} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <button type="button" onClick={onPlan} disabled={busy} style={{ padding: "8px 12px" }}>
           {busy ? "Planning…" : "Plan this week"}
