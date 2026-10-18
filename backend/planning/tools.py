@@ -205,6 +205,9 @@ def execute_tool(ctx: ToolContext, name: str, args: Any) -> dict:
         payload = plain(args or {})
         if not isinstance(payload, dict):
             return {"error": "Tool arguments must be an object"}
+        from planning.tool_log import note_tool
+
+        note_tool(name, payload)
         handler = HANDLERS.get(name)
         if handler is None:
             return {"error": f"Unknown tool {name}"}

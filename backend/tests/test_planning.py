@@ -549,6 +549,7 @@ def test_typed_rehearsal_calls_add_item_and_shows_a_block(tmp_path, monkeypatch)
     assert block.start.startswith("2026-10-23T19:00")
     assert block.end.startswith("2026-10-23T21:00")
     assert "Friday" in result["message"]
+    assert [call["name"] for call in result["tool_calls"]] == ["add_item", "create_blocks"]
 
 
 def test_typed_dentist_appointment_fills_one_hour(tmp_path, monkeypatch):
@@ -597,6 +598,7 @@ def test_typed_delete_removes_the_friday_rehearsal(tmp_path, monkeypatch):
     result = plan_week(store, "delete the rehearsal on Friday", week_start="2026-10-19")
     assert result["valid"] is True, result
     assert calls == ["delete_block"]
+    assert [call["name"] for call in result["tool_calls"]] == ["delete_block"]
     assert result["plan"].blocks == []
     assert result["message"] == "Removed Rehearsal from Friday Oct 23."
 
@@ -685,6 +687,7 @@ def test_reschedule_request_moves_the_matching_block(tmp_path, monkeypatch):
     assert block.id == original.id
     assert block.start.startswith("2026-10-21")
     assert "Wednesday" in moved["message"]
+    assert any(call["name"] == "move_block" for call in moved["tool_calls"])
     assert store.items()[0].due_or_start == "2026-10-23T18:00:00-07:00"
 
 

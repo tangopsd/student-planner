@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { sendVoiceText } from "@/lib/api";
-import type { Block, Item, WeekPlan } from "@/lib/types";
+import type { Block, Item, ToolCall, WeekPlan } from "@/lib/types";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -43,6 +43,13 @@ function addDays(isoDate: string, days: number): string {
   return `${utc.getUTCFullYear()}-${pad(utc.getUTCMonth() + 1)}-${pad(utc.getUTCDate())}`;
 }
 
+function formatCall(call: ToolCall): string {
+  const args = Object.entries(call.args || {})
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(", ");
+  return `${call.name}(${args})`;
+}
+
 function blockTitle(block: Block, items: Item[]): string {
   const linked = block.item_id ? items.find((item) => item.id === block.item_id) : undefined;
   return linked?.title || block.reason || "Untitled block";
@@ -62,6 +69,7 @@ export function WeekPlanner({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialPlanError);
   const [reply, setReply] = useState("");
+  const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [debug, setDebug] = useState(() =>
     JSON.stringify(starting ? { source: "saved plan", plan: starting } : { source: "saved plan", plans: initialPlans }, null, 2),
   );
@@ -80,6 +88,7 @@ export function WeekPlanner({
       const turn = await sendVoiceText(text, plan?.week_start);
       if (inputRef.current) inputRef.current.value = "";
       setReply(turn.reply);
+      setToolCalls(turn.tool_calls ?? []);
       setDebug(JSON.stringify(turn, null, 2));
       if (turn.plan) setPlan(turn.plan);
       if (turn.errors?.length) setError(turn.errors.join(" "));
@@ -132,12 +141,30 @@ export function WeekPlanner({
           {busy ? "Updating…" : "Send"}
         </button>
       </form>
-      {reply ? <p style={{ marginTop: 0 }}>Desk: {reply}</p> : null}
       {error ? (
         <p role="alert" style={{ border: "2px solid #b42318", background: "#fff4f2", color: "#7a1b12", padding: 12, borderRadius: 8 }}>
           {error}
         </p>
       ) : null}
+      <aside
+        aria-label="Tool calls"
+        style={{ border: "2px solid #1f3a2e", background: "#f3f7f4", borderRadius: 12, padding: 12, marginBottom: 16 }}
+      >
+        <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>Tool calls</h3>
+        {toolCalls.length === 0 ? (
+          <p style={{ margin: 0 }}>No tool calls yet. Type a change and press Send.</p>
+        ) : (
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            {toolCalls.map((call, index) => (
+              <li key={`${call.name}-${index}`} style={{ marginBottom: 6 }}>
+                <code style={{ fontSize: 13 }}>{formatCall(call)}</code>
+              </li>
+            ))}
+          </ol>
+        )}
+        <h3 style={{ margin: "16px 0 8px", fontSize: 18 }}>Explanation</h3>
+        <p style={{ margin: 0 }}>{reply || "The short explanation will show here."}</p>
+      </aside>
       <div id="week-grid">
         {blocks.length === 0 ? (
           <p>The planner response has no blocks to show.</p>

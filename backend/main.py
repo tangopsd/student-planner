@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from planning.gemini_plan import GeminiError, plan_week
 from voice_io import transcribe_audio
@@ -56,6 +56,11 @@ class GeminiPlanIn(BaseModel):
     week_start: str | None = None
 
 
+class ToolCallOut(BaseModel):
+    name: str
+    args: dict = Field(default_factory=dict)
+
+
 class GeminiPlanOut(BaseModel):
     week_start: str
     plan: Plan | None = None
@@ -63,6 +68,7 @@ class GeminiPlanOut(BaseModel):
     errors: list[str]
     attempts: int
     message: str
+    tool_calls: list[ToolCallOut] = Field(default_factory=list)
 
 
 class VoiceOut(BaseModel):
@@ -73,6 +79,7 @@ class VoiceOut(BaseModel):
     valid: bool
     errors: list[str]
     attempts: int
+    tool_calls: list[ToolCallOut] = Field(default_factory=list)
 
 
 def create_app(state_path: Path | None = None) -> FastAPI:
@@ -241,6 +248,7 @@ def create_app(state_path: Path | None = None) -> FastAPI:
             "valid": result["valid"],
             "errors": result["errors"],
             "attempts": result["attempts"],
+            "tool_calls": result.get("tool_calls") or [],
         }
 
     return app

@@ -84,6 +84,11 @@ export type WeekPlan = {
   change_log: { at: string; summary: string }[];
 };
 
+export type ToolCall = {
+  name: string;
+  args: Record<string, unknown>;
+};
+
 export type GeminiPlanResult = {
   week_start: string;
   plan: WeekPlan | null;
@@ -91,6 +96,7 @@ export type GeminiPlanResult = {
   errors: string[];
   attempts: number;
   message: string;
+  tool_calls?: ToolCall[];
 };
 
 export type VoiceTurn = {
@@ -101,4 +107,5 @@ export type VoiceTurn = {
   valid: boolean;
   errors: string[];
   attempts: number;
+  tool_calls?: ToolCall[];
 };

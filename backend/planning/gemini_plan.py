@@ -8,6 +8,7 @@ from typing import Any
 
 from ical_parser import LOCAL_TZ
 from models import Item
+from planning.tool_log import begin_tool_log, tool_log
 from planning.tools import TOOL_SPECS, ToolContext, execute_tool, plain
 from planning.validator import explain_plan_errors, validate_week
 from store import Store
@@ -92,12 +93,15 @@ def plan_week(
     text = request.strip()
     if not text:
         raise GeminiError("Say what you want planned", 400)
+    begin_tool_log()
     items = store.items()
     target = _require_monday(week_start) if week_start else choose_week_start(items).isoformat()
     if model is None:
         from planning.local_plan import plan_locally
 
-        return plan_locally(store, target, text)
+        result = plan_locally(store, target, text)
+        result["tool_calls"] = tool_log()
+        return result
 
     profile = store.profile()
     original_ids = {item.id for item in items}
@@ -137,6 +141,7 @@ def plan_week(
         "errors": errors,
         "attempts": attempts,
         "message": (message or "")[:2000],
+        "tool_calls": tool_log(),
     }
 
 

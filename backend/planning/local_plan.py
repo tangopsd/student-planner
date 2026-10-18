@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from ical_parser import LOCAL_TZ
 from models import Block, Item, Plan, Profile
+from planning.tool_log import note_tool
 from planning.tools import ToolContext, execute_tool
 from planning.validator import explain_plan_errors, validate_week
 from store import Store, StoreError
@@ -577,6 +578,7 @@ def _write_move(store: Store, block_id: str, placed: tuple[datetime, datetime], 
         store.move_block(block_id, start.isoformat(), end.isoformat(), summary, datetime.now(LOCAL_TZ).isoformat())
     except StoreError:
         return False
+    note_tool("move_block", {"block_id": block_id, "start": start.isoformat(), "end": end.isoformat()})
     return True
 
 
