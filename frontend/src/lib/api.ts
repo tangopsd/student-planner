@@ -1,4 +1,6 @@
 import type {
+  Block,
+  BlockStatus,
   Classification,
   GeminiPlanResult,
   ImportResult,
@@ -114,6 +116,13 @@ export function patchItem(
 
 export function deleteItem(id: string) {
   return request<void>(`/api/items/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function markBlockStatus(blockId: string, status: BlockStatus) {
+  return request<Block>(`/api/blocks/${encodeURIComponent(blockId)}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
 }
 
 export function classify(title: string) {

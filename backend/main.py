@@ -82,6 +82,10 @@ class VoiceOut(BaseModel):
     tool_calls: list[ToolCallOut] = Field(default_factory=list)
 
 
+class BlockStatusIn(BaseModel):
+    status: Literal["scheduled", "done", "skipped"]
+
+
 def create_app(state_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="Desk", version="1.0.0")
     app.add_middleware(
@@ -194,6 +198,29 @@ def create_app(state_path: Path | None = None) -> FastAPI:
         if week_start is not None:
             week_start = require_monday(week_start)
         return store.plans(week_start)
+
+    @app.post("/api/blocks/{block_id}/status", response_model=Block)
+    def post_block_status(
+        block_id: str,
+        body: BlockStatusIn,
+        store: Store = Depends(get_store),
+    ) -> Block:
+        summary = {
+            "done": "Marked the study block done",
+            "skipped": "Skipped the study block",
+            "scheduled": "Marked the study block scheduled",
+        }[body.status]
+        try:
+            return store.mark_block_progress(
+                block_id,
+                body.status,
+                summary,
+                datetime.now(LOCAL_TZ).isoformat(),
+            )
+        except StoreError as exc:
+            message = str(exc)
+            code = 404 if message.startswith("No block") else 400
+            raise HTTPException(code, message) from exc
 
     @app.post("/api/plans", response_model=Plan)
     def post_plan(body: PlanIn, store: Store = Depends(get_store)) -> Plan:

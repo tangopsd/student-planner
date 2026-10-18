@@ -48,6 +48,8 @@ Leave the frontend running. `GEMINI_MODEL` is optional and defaults to `gemini-3
 
 Type a change in the weekly plan and press **Send**. A move updates a block that is already there. A new commitment, such as “add a rehearsal on Friday from 7 to 9pm” or “I have a dentist appointment Tuesday at 3”, is added and then shown on that day. “Delete the rehearsal on Friday” or “remove my dentist appointment” takes that block off the week. A locked exam stays put. Each request shows the tool calls, such as `add_item(...)` or `delete_block(...)`, and the short explanation above the week. The page does not record audio, and it has no Plan this week or Reload saved plan button. A successful request replaces the blocks in the weekly list.
 
+**Study** uses the same header. The timer counts down and the stopwatch counts up, both on this page. Set hours and minutes, or use 25, 45, or 90 minutes. Play, pause, and reset stay in the browser. The current block, a checklist, and what is up next come from the saved week. A couple of Spotify playlists embed beside the timer. When the timer ends, or you mark the block done, that block’s status becomes done.
+
 ## Tests
 
 ```bash
@@ -81,6 +83,7 @@ Importing the same feed again refreshes title, course, type, time, and descripti
 | `GET` / `PUT` | `/api/profile` | Read or replace the student profile |
 | `GET` | `/api/classify?title=` | Keyword type (`matched` is false when nothing hit) |
 | `GET` / `POST` | `/api/plans` | List plan versions, or append the next version for a Monday |
+| `POST` | `/api/blocks/{id}/status` | JSON `{"status": "done"}` (`scheduled`, `done`, or `skipped`) |
 | `POST` | `/api/plan/gemini` | JSON `{"request": "Plan this week", "week_start": "YYYY-MM-DD"}`. `week_start` is optional. |
 | `POST` | `/api/voice` | JSON `{"text": "...", "week_start": "YYYY-MM-DD"}`, or multipart with `text` or an `audio` file. Returns the transcript, reply, and updated plan. |
 

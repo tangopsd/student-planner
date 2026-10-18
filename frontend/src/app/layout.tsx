@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Newsreader, Outfit } from "next/font/google";
+import { DM_Sans, Fraunces, Newsreader, Outfit } from "next/font/google";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -13,6 +13,18 @@ const newsreader = Newsreader({
   style: ["normal", "italic"],
 });
 
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
+  subsets: ["latin"],
+  weight: ["300", "400", "500"],
+});
+
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  weight: ["300", "400"],
+});
+
 export const metadata: Metadata = {
   title: "Desk",
   description: "Deadlines grouped by the week they fall in.",
@@ -22,7 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${outfit.variable} ${newsreader.variable} h-full antialiased`}
+      className={`${outfit.variable} ${newsreader.variable} ${dmSans.variable} ${fraunces.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <script

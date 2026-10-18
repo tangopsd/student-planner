@@ -9,6 +9,8 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-outfit), sans-serif;
   --font-serif: var(--font-newsreader), Georgia, serif;
+  --font-study: var(--font-dm-sans), sans-serif;
+  --font-study-heading: var(--font-fraunces), Georgia, serif;
   --font-mono: ui-monospace, SFMono-Regular, monospace;
   --font-heading: var(--font-newsreader), Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring);

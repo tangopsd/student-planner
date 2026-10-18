@@ -287,6 +287,55 @@ def test_plan_versions_and_restart(client, tmp_path):
     assert profile["daily_capacity_hours"] == 4
 
 
+def test_mark_block_done(client):
+    item = client.post(
+        "/api/items",
+        json={
+            "title": "HW1",
+            "type": "assignment",
+            "due_or_start": "2026-10-23T18:00",
+        },
+    ).json()
+    created = client.post(
+        "/api/plans",
+        json={
+            "week_start": "2026-10-19",
+            "blocks": [
+                {
+                    "item_id": item["id"],
+                    "start": "2026-10-21T19:00:00-07:00",
+                    "end": "2026-10-21T21:00:00-07:00",
+                    "kind": "study",
+                    "status": "scheduled",
+                    "reason": "Evening window",
+                }
+            ],
+            "summary": "First pass",
+        },
+    )
+    assert created.status_code == 200
+    block_id = created.json()["blocks"][0]["id"]
+
+    marked = client.post(f"/api/blocks/{block_id}/status", json={"status": "done"})
+    assert marked.status_code == 200
+    assert marked.json()["status"] == "done"
+    assert marked.json()["id"] == block_id
+
+    latest = client.get("/api/plans").json()[-1]
+    assert latest["blocks"][0]["status"] == "done"
+    assert latest["change_log"][-1]["summary"] == "Marked the study block done"
+
+    again = client.post(f"/api/blocks/{block_id}/status", json={"status": "done"})
+    assert again.status_code == 200
+    assert again.json()["status"] == "done"
+
+    missing = client.post("/api/blocks/missing-block/status", json={"status": "done"})
+    assert missing.status_code == 404
+
+    invalid = client.post(f"/api/blocks/{block_id}/status", json={"status": "open"})
+    assert invalid.status_code == 422
+
+
 def test_voice_source_round_trips_through_the_file(tmp_path):
     from store import Store
 

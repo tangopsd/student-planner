@@ -7,6 +7,7 @@ import type { Item, Profile, Week, WeekPlan } from "@/lib/types";
 import { HoursPanel } from "@/components/hours-panel";
 import { ImportPanel } from "@/components/import-panel";
 import { ManualForm } from "@/components/manual-form";
+import { StudySession } from "@/components/study-session";
 import { WeekList } from "@/components/week-list";
 import { WeekPlanner } from "@/components/week-grid";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ export function Desk({
   const [profileVersion, setProfileVersion] = useState(0);
   const [loading, setLoading] = useState(initialWeeks === null && !initialDeskError);
   const [error, setError] = useState<string | null>(initialDeskError);
+  const [view, setView] = useState<"week" | "study">("week");
 
   function refreshWeeks() {
     return getWeeks().then((weekBody) => {
@@ -105,13 +107,33 @@ export function Desk({
               Import a Canvas feed, then plan the week around the deadlines already on the desk.
             </p>
           </div>
-          {profile && weeks ? (
-            <p className="text-sm text-muted-foreground">
-              {openCount} open · {doneCount} done · {formatHours(profile.daily_capacity_hours)}h a
-              day
-              {upcomingWhen ? ` · Next ${upcomingWhen.weekday}, ${upcomingWhen.date}` : ""}
-            </p>
-          ) : null}
+          <div className="flex flex-col items-start gap-3 md:items-end">
+            <nav aria-label="Views" className="flex gap-5 text-sm">
+              <button
+                type="button"
+                aria-current={view === "week" ? "page" : undefined}
+                onClick={() => setView("week")}
+                className={`border-b-[1.5px] px-0.5 py-1.5 ${view === "week" ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground"}`}
+              >
+                Week
+              </button>
+              <button
+                type="button"
+                aria-current={view === "study" ? "page" : undefined}
+                onClick={() => setView("study")}
+                className={`border-b-[1.5px] px-0.5 py-1.5 ${view === "study" ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground"}`}
+              >
+                Study
+              </button>
+            </nav>
+            {profile && weeks ? (
+              <p className="text-sm text-muted-foreground">
+                {openCount} open · {doneCount} done · {formatHours(profile.daily_capacity_hours)}h a
+                day
+                {upcomingWhen ? ` · Next ${upcomingWhen.weekday}, ${upcomingWhen.date}` : ""}
+              </p>
+            ) : null}
+          </div>
         </header>
 
         {error ? (
@@ -123,7 +145,7 @@ export function Desk({
           </div>
         ) : null}
 
-        <div className="mb-6">
+        <div className={view === "week" ? "mb-6" : "hidden"}>
           <ImportPanel
             onImported={async () => {
               await refreshWeeks();
@@ -132,7 +154,7 @@ export function Desk({
           />
         </div>
 
-        <div className="mb-6">
+        <div className={view === "week" ? "mb-6" : "hidden"}>
           <WeekPlanner
             items={items}
             initialPlans={initialPlans}
@@ -140,19 +162,23 @@ export function Desk({
           />
         </div>
 
+        <div className={view === "study" ? "mb-6" : "hidden"}>
+          <StudySession items={items} initialPlans={initialPlans} active={view === "study"} />
+        </div>
+
         {loading && weeks === null && !error ? (
-          <div role="status" className="mb-6 grid gap-3" aria-label="Loading deadlines">
+          <div role="status" className={`mb-6 grid gap-3 ${view === "week" ? "" : "hidden"}`} aria-label="Loading deadlines">
             <p className="text-sm text-muted-foreground">Loading your plan…</p>
             <div className="h-24 animate-pulse rounded-xl bg-muted" />
             <div className="h-24 animate-pulse rounded-xl bg-muted" />
           </div>
         ) : weeks ? (
-          <div className="mb-6">
+          <div className={view === "week" ? "mb-6" : "hidden"}>
             <WeekList weeks={weeks} onChanged={refreshWeeks} />
           </div>
         ) : null}
 
-        <details className="rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10">
+        <details className={`rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10 ${view === "week" ? "" : "hidden"}`}>
           <summary className="cursor-pointer text-sm font-medium">
             Add a deadline by hand, or set your hours
           </summary>
