@@ -32,15 +32,23 @@ class GeminiError(Exception):
 
 
 class FunctionCall:
-    def __init__(self, name: str, args: dict):
+    def __init__(self, name: str, args: dict, thought_signature: bytes | None = None):
         self.name = name
         self.args = args
+        self.thought_signature = thought_signature
 
 
 class ModelTurn:
-    def __init__(self, text: str, calls: list[tuple[str, dict]] | None = None):
+    def __init__(self, text: str, calls: list | None = None):
         self.text = text
-        self.calls = [FunctionCall(name, args) for name, args in (calls or [])]
+        parsed: list[FunctionCall] = []
+        for call in calls or []:
+            if isinstance(call, FunctionCall):
+                parsed.append(call)
+                continue
+            signature = call[2] if len(call) > 2 else None
+            parsed.append(FunctionCall(call[0], call[1], signature))
+        self.calls = parsed
 
 
 def choose_week_start(items: list[Item], today: date | None = None) -> date:
@@ -207,10 +215,14 @@ class GoogleGeminiModel:
                 if turn.get("text"):
                     parts.append(types.Part.from_text(text=turn["text"]))
                 for call in turn.get("calls") or []:
+                    signature = call.get("thought_signature")
                     parts.append(
-                        types.Part.from_function_call(
-                            name=call["name"],
-                            args=call.get("args") or {},
+                        types.Part(
+                            function_call=types.FunctionCall(
+                                name=call["name"],
+                                args=call.get("args") or {},
+                            ),
+                            thought_signature=signature or None,
                         )
                     )
                 if parts:
@@ -248,7 +260,10 @@ class GoogleGeminiModel:
                 last_error = exc
                 if retryable_model_error(exc):
                     continue
-                raise GeminiError(BUSY_MESSAGE, 502) from exc
+                raise GeminiError(
+                    "Gemini could not update the week. Try again in a moment.",
+                    502,
+                ) from exc
             remember_model(name)
             self._model_name = name
             self._models = [name] + [item for item in self._models if item != name]
@@ -260,7 +275,14 @@ def _converse(model: Any, transcript: list[dict], context: ToolContext) -> str:
     message = ""
     for _ in range(MAX_ROUNDS):
         turn = model.complete(list(transcript))
-        calls = [{"name": call.name, "args": call.args} for call in turn.calls]
+        calls = [
+            {
+                "name": call.name,
+                "args": call.args,
+                "thought_signature": call.thought_signature,
+            }
+            for call in turn.calls
+        ]
         transcript.append({"role": "model", "text": turn.text or "", "calls": calls})
         if turn.text:
             message = turn.text
@@ -297,7 +319,8 @@ def _turn_from_response(response: Any) -> ModelTurn:
             args = plain(raw_args)
             if not isinstance(args, dict):
                 args = {}
-            calls.append((name, args))
+            signature = getattr(part, "thought_signature", None)
+            calls.append((name, args, signature if isinstance(signature, bytes) else None))
             continue
         text = getattr(part, "text", None)
         if text:

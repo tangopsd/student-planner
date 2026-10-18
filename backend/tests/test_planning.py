@@ -787,6 +787,33 @@ def test_gemini_endpoint_returns_the_planner_result(client, monkeypatch):
     assert response.json()["valid"] is True
 
 
+def test_turn_keeps_the_thought_signature_from_the_model():
+    from planning.gemini_plan import _turn_from_response
+
+    class Call:
+        name = "list_items"
+        args = {}
+
+    class Part:
+        function_call = Call()
+        thought_signature = b"sig"
+        text = None
+
+    class Content:
+        parts = [Part()]
+
+    class Candidate:
+        content = Content()
+
+    class Response:
+        candidates = [Candidate()]
+        text = None
+
+    turn = _turn_from_response(Response())
+    assert turn.calls[0].name == "list_items"
+    assert turn.calls[0].thought_signature == b"sig"
+
+
 def test_declarations_cover_the_planner_tools():
     pytest.importorskip("google.genai")
     from planning.gemini_plan import build_declarations

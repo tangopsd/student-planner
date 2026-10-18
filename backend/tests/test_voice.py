@@ -189,6 +189,80 @@ def test_planner_skips_a_busy_model(monkeypatch):
     gemini_plan._preferred_model = None
 
 
+def test_function_calls_keep_the_thought_signature(monkeypatch):
+    from planning import gemini_plan
+    from planning.gemini_plan import GoogleGeminiModel
+
+    gemini_plan._preferred_model = None
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    captured = {}
+
+    class Response:
+        text = "ok"
+        candidates = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            del model, config
+            captured["contents"] = contents
+            return Response()
+
+    class Client:
+        models = Models()
+
+    GoogleGeminiModel(client=Client()).complete(
+        [
+            {"role": "user", "text": "Plan the week"},
+            {
+                "role": "model",
+                "text": "",
+                "calls": [
+                    {
+                        "name": "list_items",
+                        "args": {},
+                        "thought_signature": b"sig",
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "responses": [{"name": "list_items", "response": {"items": []}}],
+            },
+        ]
+    )
+    call_part = captured["contents"][1].parts[0]
+    assert call_part.function_call.name == "list_items"
+    assert call_part.thought_signature == b"sig"
+    gemini_plan._preferred_model = None
+
+
+def test_a_rejected_request_is_not_called_busy(monkeypatch):
+    from planning import gemini_plan
+    from planning.gemini_plan import GeminiError, GoogleGeminiModel
+
+    gemini_plan._preferred_model = None
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            del model, contents, config
+            raise RuntimeError("400 INVALID_ARGUMENT. Function call is missing a thought_signature")
+
+    class Client:
+        models = Models()
+
+    try:
+        GoogleGeminiModel(client=Client()).complete([{"role": "user", "text": "Plan the week"}])
+    except GeminiError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected a planner error")
+    assert "busy" not in message.lower()
+    assert "thought_signature" not in message
+    assert "400" not in message
+    gemini_plan._preferred_model = None
+
+
 def test_empty_text_is_rejected(client):
     response = client.post("/api/voice", json={"text": "   "})
     assert response.status_code == 400
