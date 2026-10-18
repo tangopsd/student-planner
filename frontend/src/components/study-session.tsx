@@ -570,16 +570,14 @@ export function StudySession({
 
   return (
     <section aria-label="Study session" className="font-study text-foreground">
-      <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
-        <div className="flex flex-col items-start gap-8 sm:flex-row sm:items-center sm:gap-12">
-          <div className="shrink-0">
-            <div className="font-study-heading text-7xl font-light leading-none tracking-tight sm:text-8xl">{formatClock(shown)}</div>
-            <div className="mt-3 text-[13px] font-light text-muted-foreground">
-              {mode === "timer" ? `of ${formatSpan(durationSec)}` : `elapsed, of ${formatSpan(durationSec)}`}
-            </div>
-          </div>
-
-          <div className="min-w-0 w-full flex-1">
+      <div className="mb-5">
+        <div className="font-study-heading text-6xl font-light leading-none tracking-tight sm:text-7xl">{formatClock(shown)}</div>
+        <div className="mt-2 text-[13px] font-light text-muted-foreground">
+          {mode === "timer" ? `of ${formatSpan(durationSec)}` : `elapsed, of ${formatSpan(durationSec)}`}
+        </div>
+      </div>
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
+        <div className="min-w-0">
             <div className="mb-1.5 flex gap-5">
               <button type="button" className={linkClass(mode === "timer")} onClick={() => switchMode("timer")}>
                 Timer
@@ -588,60 +586,10 @@ export function StudySession({
                 Stopwatch
               </button>
             </div>
-            <p className="mb-6 text-xs font-light text-muted-foreground">
+            <p className="mb-3 text-xs font-light text-muted-foreground">
               Timer counts down your block. Stopwatch counts up for open-ended sessions.
             </p>
-
-            <div className="mb-7">
-              <div className="mb-2 text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">Set time</div>
-              <div className="flex flex-wrap items-end gap-5">
-                <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-                  Hours
-                  <input
-                    type="number"
-                    min={0}
-                    max={12}
-                    inputMode="numeric"
-                    value={hourText}
-                    onChange={(event) => setHourText(event.target.value)}
-                    className="h-10 w-14 border-0 border-b border-foreground bg-transparent font-study-heading text-[26px] font-light text-foreground outline-none"
-                  />
-                </label>
-                <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-                  Minutes
-                  <input
-                    type="number"
-                    min={0}
-                    max={59}
-                    inputMode="numeric"
-                    value={minuteText}
-                    onChange={(event) => setMinuteText(event.target.value)}
-                    className="h-10 w-14 border-0 border-b border-foreground bg-transparent font-study-heading text-[26px] font-light text-foreground outline-none"
-                  />
-                </label>
-                <button type="button" className={linkClass(true)} onClick={setFromInputs}>
-                  Set
-                </button>
-                <span className="pb-1.5 text-[13px] text-muted-foreground">or</span>
-                {[25, 45, 90].map((preset) => (
-                  <button key={preset} type="button" className={actionClass()} onClick={() => applyMinutes(preset)}>
-                    {preset} min
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">Now studying</div>
-            <h2 className="mb-1.5 mt-2 font-study-heading text-4xl font-light leading-tight">{title}</h2>
-            <p className="mb-6 text-sm font-light text-muted-foreground">{meta}</p>
-            {planError ? (
-              <p role="alert" className="mb-4 text-sm text-destructive">
-                {planError}
-              </p>
-            ) : null}
-            {note ? <p className="mb-4 text-sm font-light text-muted-foreground">{note}</p> : null}
-
-            <div className="mb-9 flex flex-wrap gap-7">
+            <div className="mb-5 flex flex-wrap gap-7">
               <button type="button" className={actionClass()} onClick={play}>
                 {running ? "Pause" : "Play"}
               </button>
@@ -654,6 +602,49 @@ export function StudySession({
               <button type="button" className={actionClass()} onClick={() => addMinutes(15)}>
                 Need more time
               </button>
+            </div>
+
+            <div className="text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">Now studying</div>
+            <h2 className="mb-1.5 mt-2 font-study-heading text-4xl font-light leading-tight">{title}</h2>
+            <p className="mb-4 text-sm font-light text-muted-foreground">{meta}</p>
+            {planError ? (
+              <p role="alert" className="mb-4 text-sm text-destructive">
+                {planError}
+              </p>
+            ) : null}
+            {note ? <p className="mb-4 text-sm font-light text-muted-foreground">{note}</p> : null}
+
+            <div className="mb-5">
+              <div className="mb-1.5 text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">Set time</div>
+              <div className="flex flex-wrap items-end gap-4">
+                <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                  Hours
+                  <input
+                    type="number"
+                    min={0}
+                    max={12}
+                    inputMode="numeric"
+                    value={hourText}
+                    onChange={(event) => setHourText(event.target.value)}
+                    className="h-8 w-12 border-0 border-b border-foreground bg-transparent font-study text-base font-light text-foreground outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                  Minutes
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    inputMode="numeric"
+                    value={minuteText}
+                    onChange={(event) => setMinuteText(event.target.value)}
+                    className="h-8 w-12 border-0 border-b border-foreground bg-transparent font-study text-base font-light text-foreground outline-none"
+                  />
+                </label>
+                <button type="button" className={linkClass(true)} onClick={setFromInputs}>
+                  Set
+                </button>
+              </div>
             </div>
 
             <div className="mb-1 text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">Tasks</div>
@@ -694,7 +685,6 @@ export function StudySession({
               </button>
             </form>
           </div>
-        </div>
 
         <aside className="flex flex-col gap-4 border-t border-foreground/20 pt-5">
           <h2 className="font-study-heading text-2xl font-light">Focus music</h2>

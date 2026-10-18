@@ -23,6 +23,7 @@ const fraunces = Fraunces({
   variable: "--font-fraunces",
   subsets: ["latin"],
   weight: ["300", "400"],
+  style: ["normal", "italic"],
 });
 
 export const metadata: Metadata = {

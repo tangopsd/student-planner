@@ -96,13 +96,13 @@ export function Desk({
   return (
     <>
       <div className="h-1.5 bg-primary" />
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-8 md:px-8">
-        <header className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <main className={`mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 md:px-8 ${view === "study" ? "py-4" : "py-8"}`}>
+        <header className={`flex flex-col gap-4 md:flex-row md:items-end md:justify-between ${view === "study" ? "mb-4" : "mb-8"}`}>
           <div>
             <p className="font-study text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Focus
             </p>
-            <h1 className="font-study-heading text-4xl font-light leading-none sm:text-5xl">Quill</h1>
+            <h1 className="font-study-heading text-4xl font-light italic leading-none sm:text-5xl">Quill</h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
               Import a Canvas feed, then plan the week around the deadlines already on the desk.
             </p>
