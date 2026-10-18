@@ -165,6 +165,35 @@ class Store:
             self._persist()
             return True
 
+    def drop_unscheduled_item(self, item_id: str) -> bool:
+        """Drop a deadline once no current plan block uses it.
+
+        Older plan versions can still mention the id. Those stay as history.
+        A locked deadline is left in place. Returns False when the deadline
+        stays.
+        """
+        with self._lock:
+            latest: dict[str, Plan] = {}
+            for plan in self._state.plans:
+                current = latest.get(plan.week_start)
+                if current is None or plan.version > current.version:
+                    latest[plan.week_start] = plan
+            linked = any(
+                block.item_id == item_id
+                for plan in latest.values()
+                for block in plan.blocks
+            )
+            if linked:
+                return False
+            index = self._index(item_id)
+            if index is None:
+                return False
+            if self._state.items[index].locked:
+                return False
+            del self._state.items[index]
+            self._persist()
+            return True
+
     def merge_feed_items(self, incoming: list[Item]) -> dict:
         """Refresh feed fields. Effort and status on an existing id are kept."""
         with self._lock:

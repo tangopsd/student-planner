@@ -600,7 +600,53 @@ def test_typed_delete_removes_the_friday_rehearsal(tmp_path, monkeypatch):
     assert calls == ["delete_block"]
     assert [call["name"] for call in result["tool_calls"]] == ["delete_block"]
     assert result["plan"].blocks == []
+    assert store.items() == []
     assert result["message"] == "Removed Rehearsal from Friday Oct 23."
+
+
+def test_typed_delete_keeps_the_deadline_while_another_block_uses_it(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    plan_week(store, "add a rehearsal on Friday from 7 to 9pm", week_start="2026-10-19")
+    item = store.items()[0]
+    store.create_blocks(
+        "2026-10-19",
+        [
+            make_block(
+                id="extra-block",
+                item_id=item.id,
+                start="2026-10-22T16:00:00-07:00",
+                end="2026-10-22T17:00:00-07:00",
+                kind="fixed",
+                reason="Rehearsal",
+            )
+        ],
+        "second sitting",
+        "2026-10-17T16:00:00-07:00",
+    )
+    result = plan_week(store, "delete the rehearsal on Friday", week_start="2026-10-19")
+    assert result["valid"] is True, result
+    assert [row.id for row in store.items()] == [item.id]
+    assert [block.start[:10] for block in result["plan"].blocks] == ["2026-10-22"]
+
+
+def test_typed_delete_drops_a_deadline_that_only_an_older_plan_mentions(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    plan_week(store, "add a rehearsal on Friday from 7 to 9pm", week_start="2026-10-19")
+    item_id = store.items()[0].id
+    latest = store.latest_plan("2026-10-19")
+    assert latest is not None
+    store.add_plan("2026-10-19", list(latest.blocks), "Saved a copy", "2026-10-17T16:00:00-07:00")
+    with pytest.raises(StoreError, match="still linked"):
+        store.delete_item(item_id)
+    result = plan_week(store, "delete the rehearsal on Friday", week_start="2026-10-19")
+    assert result["valid"] is True, result
+    assert result["plan"].blocks == []
+    assert store.items() == []
+    history = store.plans("2026-10-19")
+    assert history[0].blocks[0].item_id == item_id
+    assert history[-1].blocks == []
 
 
 def test_typed_remove_finds_the_dentist_without_a_day(tmp_path, monkeypatch):

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getPlans, markBlockStatus } from "@/lib/api";
+import { getPlans, markBlockStatus, patchItem } from "@/lib/api";
 import { PACIFIC } from "@/lib/format";
 import type { Block, Item, WeekPlan } from "@/lib/types";
 
@@ -80,6 +80,23 @@ function latestPlan(plans: WeekPlan[]): WeekPlan | null {
     if (left.week_start === right.week_start) return right.version - left.version;
     return left.week_start < right.week_start ? 1 : -1;
   })[0];
+}
+
+function latestByWeek(plans: WeekPlan[]): WeekPlan[] {
+  const chosen = new Map<string, WeekPlan>();
+  for (const plan of plans) {
+    const current = chosen.get(plan.week_start);
+    if (!current || plan.version > current.version) chosen.set(plan.week_start, plan);
+  }
+  return [...chosen.values()];
+}
+
+function deadlineStatus(plans: WeekPlan[], itemId: string): "open" | "done" {
+  const linked = latestByWeek(plans)
+    .flatMap((plan) => plan.blocks)
+    .filter((block) => block.item_id === itemId);
+  if (linked.length === 0) return "open";
+  return linked.every((block) => block.status !== "scheduled") ? "done" : "open";
 }
 
 function blockTitle(block: Block, items: Item[]): string {
@@ -221,16 +238,20 @@ function actionClass(): string {
 
 export function StudySession({
   items,
-  initialPlans,
+  plans,
+  onPlans,
+  onChanged,
   active,
 }: {
   items: Item[];
-  initialPlans: WeekPlan[];
+  plans: WeekPlan[];
+  onPlans: (update: WeekPlan[] | ((current: WeekPlan[]) => WeekPlan[])) => void;
+  onChanged: () => Promise<void>;
   active: boolean;
 }) {
   const today = useSyncExternalStore(subscribeToday, pacificToday, () => "");
-  const [plans, setPlans] = useState(initialPlans);
   const [planError, setPlanError] = useState<string | null>(null);
+  const planStamp = useRef(0);
   const [mode, setMode] = useState<Mode>("timer");
   const [durationSec, setDurationSec] = useState(25 * 60);
   const [hourText, setHourText] = useState("0");
@@ -253,10 +274,11 @@ export function StudySession({
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
+    const stamp = planStamp.current;
     getPlans()
       .then((next) => {
-        if (!cancelled) {
-          setPlans(next);
+        if (!cancelled && stamp === planStamp.current) {
+          onPlans(next);
           setPlanError(null);
         }
       })
@@ -268,7 +290,7 @@ export function StudySession({
     return () => {
       cancelled = true;
     };
-  }, [active]);
+  }, [active, onPlans]);
 
   const plan = latestPlan(plans);
   const blocks = Array.isArray(plan?.blocks) ? plan.blocks : [];
@@ -411,6 +433,31 @@ export function StudySession({
     setNote(`Added ${Math.round(extra)} minutes.`);
   }
 
+  async function applyBlockStatus(block: Block, status: "scheduled" | "done") {
+    const updated = await markBlockStatus(block.id, status);
+    rememberFinished(block.id, status === "done" ? nowMs() : null);
+    planStamp.current += 1;
+    let nextPlans = plans;
+    onPlans((current) => {
+      nextPlans = current.map((entry) => {
+        if (entry.week_start !== plan?.week_start || entry.version !== plan.version) return entry;
+        return {
+          ...entry,
+          blocks: entry.blocks.map((row) => (row.id === updated.id ? { ...row, status: updated.status } : row)),
+        };
+      });
+      return nextPlans;
+    });
+    if (block.item_id) {
+      const item = items.find((row) => row.id === block.item_id);
+      const nextStatus = deadlineStatus(nextPlans, block.item_id);
+      if (item && item.status !== nextStatus) {
+        await patchItem(block.item_id, { status: nextStatus });
+      }
+    }
+    await onChanged();
+  }
+
   async function markDone() {
     if (!current || markingRef.current) return;
     const title = blockTitle(current, items);
@@ -421,17 +468,7 @@ export function StudySession({
     markingRef.current = true;
     stopClock();
     try {
-      const updated = await markBlockStatus(current.id, "done");
-      rememberFinished(current.id, nowMs());
-      setPlans((prev) =>
-        prev.map((entry) => {
-          if (entry.week_start !== plan?.week_start || entry.version !== plan.version) return entry;
-          return {
-            ...entry,
-            blocks: entry.blocks.map((block) => (block.id === updated.id ? { ...block, status: updated.status } : block)),
-          };
-        }),
-      );
+      await applyBlockStatus(current, "done");
       setNote(`Marked ${title} done.`);
     } catch (err) {
       finishedRef.current = false;
@@ -487,19 +524,11 @@ export function StudySession({
 
   async function toggleTask(task: StudyTask) {
     if (task.blockId) {
+      const block = blocks.find((row) => row.id === task.blockId);
+      if (!block) return;
       const nextStatus = task.done ? "scheduled" : "done";
       try {
-        const updated = await markBlockStatus(task.blockId, nextStatus);
-        rememberFinished(task.blockId, nextStatus === "done" ? nowMs() : null);
-        setPlans((prev) =>
-          prev.map((entry) => {
-            if (entry.week_start !== plan?.week_start || entry.version !== plan.version) return entry;
-            return {
-              ...entry,
-              blocks: entry.blocks.map((block) => (block.id === updated.id ? { ...block, status: updated.status } : block)),
-            };
-          }),
-        );
+        await applyBlockStatus(block, nextStatus);
       } catch (err) {
         setNote(err instanceof Error ? err.message : "Couldn't update that block.");
       }

@@ -198,6 +198,8 @@ def _remove_commitment(store: Store, week_start: str, request: str, existing: Pl
     if errors:
         _undo(store)
         return _failed(store, week_start, explain_plan_errors(errors))
+    if item is not None:
+        store.drop_unscheduled_item(item.id)
     title = item.title if item is not None else (chosen.reason or "that block")
     return _ok(store, week_start, f"Removed {title} from {_day_label(_local(chosen.start).date())}.", 1)
 

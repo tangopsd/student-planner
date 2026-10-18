@@ -57,24 +57,22 @@ function blockTitle(block: Block, items: Item[]): string {
 
 export function WeekPlanner({
   items,
-  initialPlans,
+  plans,
   initialPlanError,
   onPlan,
+  onCommitted,
 }: {
   items: Item[];
-  initialPlans: WeekPlan[];
+  plans: WeekPlan[];
   initialPlanError: string | null;
   onPlan?: (plan: WeekPlan) => void;
+  onCommitted?: () => Promise<void> | void;
 }) {
-  const starting = latestPlan(initialPlans);
-  const [plan, setPlan] = useState<WeekPlan | null>(starting);
+  const plan = latestPlan(plans);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialPlanError);
   const [reply, setReply] = useState("");
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
-  const [debug, setDebug] = useState(() =>
-    JSON.stringify(starting ? { source: "saved plan", plan: starting } : { source: "saved plan", plans: initialPlans }, null, 2),
-  );
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function onSubmit(event: React.FormEvent) {
@@ -91,18 +89,20 @@ export function WeekPlanner({
       if (inputRef.current) inputRef.current.value = "";
       setReply(turn.reply);
       setToolCalls(turn.tool_calls ?? []);
-      setDebug(JSON.stringify(turn, null, 2));
-      if (turn.plan) {
-        setPlan(turn.plan);
-        onPlan?.(turn.plan);
-      }
+      if (turn.plan) onPlan?.(turn.plan);
       if (turn.errors?.length) setError(turn.errors.join(" "));
       else if (!turn.valid) setError(turn.reply || "The planner could not update the week.");
       else setError(null);
+      if (turn.valid) {
+        try {
+          await onCommitted?.();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Couldn't refresh deadlines.");
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not send that request.";
       setError(message);
-      setDebug(JSON.stringify({ error: message }, null, 2));
     } finally {
       setBusy(false);
     }
@@ -189,6 +189,8 @@ export function WeekPlanner({
                           {clock(block.start)} – {clock(block.end)}
                         </strong>{" "}
                         {blockTitle(block, items)}
+                        {block.status === "done" ? " · done" : null}
+                        {block.status === "skipped" ? " · skipped" : null}
                       </li>
                     ))}
                   </ul>
@@ -207,16 +209,14 @@ export function WeekPlanner({
                     {dateOf(block.start)} {clock(block.start)} – {clock(block.end)}
                   </strong>{" "}
                   {blockTitle(block, items)}
+                  {block.status === "done" ? " · done" : null}
+                  {block.status === "skipped" ? " · skipped" : null}
                 </li>
               ))}
             </ul>
           </div>
         ) : null}
       </div>
-      <h3 style={{ marginTop: 20, fontSize: 16 }}>Planner response</h3>
-      <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, background: "#f4f1ea", padding: 12, maxHeight: 280, overflow: "auto" }}>
-        {debug}
-      </pre>
     </section>
   );
 }

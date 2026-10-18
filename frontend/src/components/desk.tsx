@@ -170,14 +170,21 @@ export function Desk({
         <div className={view === "week" ? "mb-6" : "hidden"}>
           <WeekPlanner
             items={items}
-            initialPlans={initialPlans}
+            plans={plans}
             initialPlanError={initialPlanError}
             onPlan={takePlan}
+            onCommitted={refreshWeeks}
           />
         </div>
 
         <div className={view === "study" ? "mb-6" : "hidden"}>
-          <StudySession items={items} initialPlans={initialPlans} active={view === "study"} />
+          <StudySession
+            items={items}
+            plans={plans}
+            onPlans={setPlans}
+            onChanged={refreshWeeks}
+            active={view === "study"}
+          />
         </div>
 
         {loading && weeks === null && !error ? (

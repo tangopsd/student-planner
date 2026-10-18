@@ -50,7 +50,7 @@ Type a change in the weekly plan and press **Send**. A move updates a block that
 
 The week view has a recap card: blocks finished against the plan, a streak when finished days line up, and the heaviest day. Download or copy saves it as a picture.
 
-**Study** uses the same header. The timer counts down and the stopwatch counts up, both on this page. Set hours and minutes, or use 25, 45, or 90 minutes. Play, pause, and reset stay in the browser. The current block, a checklist, and what is up next come from the saved week. A couple of Spotify playlists embed beside the timer. When the timer ends, or you mark the block done, that block’s status becomes done.
+**Study** uses the same header. The timer counts down and the stopwatch counts up, both on this page. Set the hours and minutes, then play, pause, or reset. The checklist is the saved week: a task you add by typing shows up there and under upcoming deadlines, and deleting it takes it off both. Checking a task, or letting the timer finish, marks that block done and updates the deadline too. A couple of Spotify playlists embed beside the timer.
 
 ## Tests
 
