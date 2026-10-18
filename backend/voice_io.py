@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from planning.gemini_plan import GeminiError
+from planning.gemini_plan import DEFAULT_MODEL, GeminiError
 
 
 def transcribe_audio(data: bytes, mime: str) -> str:
@@ -21,7 +21,7 @@ def transcribe_audio(data: bytes, mime: str) -> str:
     from google.genai import types
 
     client = genai.Client(api_key=key)
-    model = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-2.5-flash"
+    model = os.environ.get("GEMINI_MODEL", "").strip() or DEFAULT_MODEL
     try:
         response = client.models.generate_content(
             model=model,

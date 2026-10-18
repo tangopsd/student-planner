@@ -14,6 +14,7 @@ from store import Store
 from weeks import today_in_la
 
 MAX_ROUNDS = 8
+DEFAULT_MODEL = "gemini-3.7-flash"
 
 
 class GeminiError(Exception):
@@ -148,7 +149,7 @@ class GoogleGeminiModel:
         from google import genai
 
         self._client = genai.Client(api_key=key)
-        self._model_name = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-2.5-flash"
+        self._model_name = os.environ.get("GEMINI_MODEL", "").strip() or DEFAULT_MODEL
         self._declarations = build_declarations()
 
     def complete(self, turns: list[dict]) -> ModelTurn:
