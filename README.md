@@ -22,7 +22,6 @@ Clone it, add an API key, and run it on your machine.
 - [Data & Privacy](#data--privacy)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
-- [License](#license)
 
 ---
 
@@ -177,13 +176,11 @@ student-planner/
 
 ## Roadmap
 
+- [ ] **Next up:** ship Quill as a live, working website instead of running it locally
 - [ ] Study-block reminders and notifications
 - [ ] Drag-and-drop editing of the generated plan
 - [ ] Per-course workload and difficulty weighting
 - [ ] Export plan back to a calendar (`.ics`)
-- [ ] Multi-device sync
-
-<!-- Edit this list to reflect what you actually plan to build. -->
 
 ## Contributing
 
@@ -193,11 +190,6 @@ Contributions and ideas are welcome.
 2. Make your changes and test them locally
 3. Commit with a clear message and push your branch
 4. Open a pull request describing what you changed and why
-
-## License
-
-<!-- Choose a license (MIT is a common default for projects like this) and add a LICENSE file. -->
-Distributed under the [MIT License](LICENSE).
 
 ---
 
