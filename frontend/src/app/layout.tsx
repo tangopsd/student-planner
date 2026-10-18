@@ -26,7 +26,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Desk",
+  title: "Quill",
   description: "Deadlines grouped by the week they fall in.",
 };
 

@@ -11,6 +11,17 @@ type Step = {
   id: string;
   text: string;
   done: boolean;
+  finishedAt: number;
+};
+
+type StudyTask = {
+  id: string;
+  text: string;
+  done: boolean;
+  blockId: string | null;
+  detail: string;
+  order: number;
+  finishedAt: number;
 };
 
 type Playlist = {
@@ -101,36 +112,33 @@ function formatSpan(totalSeconds: number): string {
   return `${remain}m`;
 }
 
-function storageKey(blockId: string): string {
-  return `desk-study-checks:${blockId}`;
-}
+const CUSTOM_KEY = "desk-study-tasks";
 
 let stepCacheKey = "";
 let stepCache: Step[] = EMPTY_STEPS;
 const stepListeners = new Set<() => void>();
 
-function seedSteps(): Step[] {
-  return [{ id: "focus", text: "Stay with this block", done: false }];
-}
-
-function readSteps(blockId: string | null): Step[] {
-  if (!blockId || typeof window === "undefined") return EMPTY_STEPS;
-  const key = storageKey(blockId);
-  const raw = window.localStorage.getItem(key) ?? "";
-  const cacheKey = `${key}:${raw}`;
+function readSteps(): Step[] {
+  if (typeof window === "undefined") return EMPTY_STEPS;
+  const raw = window.localStorage.getItem(CUSTOM_KEY) ?? "";
+  const cacheKey = `${CUSTOM_KEY}:${raw}`;
   if (cacheKey === stepCacheKey) return stepCache;
-  let steps = seedSteps();
+  let steps = EMPTY_STEPS;
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Step[];
       if (Array.isArray(parsed)) {
-        const clean = parsed.filter(
-          (step) => step && typeof step.id === "string" && typeof step.text === "string",
-        );
-        if (clean.length > 0) steps = clean.map((step) => ({ ...step, done: Boolean(step.done) }));
+        steps = parsed
+          .filter((step) => step && typeof step.id === "string" && typeof step.text === "string")
+          .map((step) => ({
+            id: step.id,
+            text: step.text,
+            done: Boolean(step.done),
+            finishedAt: typeof step.finishedAt === "number" ? step.finishedAt : 0,
+          }));
       }
     } catch {
-      steps = seedSteps();
+      steps = EMPTY_STEPS;
     }
   }
   stepCacheKey = cacheKey;
@@ -138,11 +146,10 @@ function readSteps(blockId: string | null): Step[] {
   return steps;
 }
 
-function writeSteps(blockId: string, steps: Step[]) {
-  const key = storageKey(blockId);
+function writeSteps(steps: Step[]) {
   const raw = JSON.stringify(steps);
-  window.localStorage.setItem(key, raw);
-  stepCacheKey = `${key}:${raw}`;
+  window.localStorage.setItem(CUSTOM_KEY, raw);
+  stepCacheKey = `${CUSTOM_KEY}:${raw}`;
   stepCache = steps;
   stepListeners.forEach((listener) => listener());
 }
@@ -150,6 +157,40 @@ function writeSteps(blockId: string, steps: Step[]) {
 function subscribeSteps(onChange: () => void) {
   stepListeners.add(onChange);
   return () => stepListeners.delete(onChange);
+}
+
+const FINISHED_KEY = "desk-study-finished";
+const EMPTY_FINISHED: Record<string, number> = {};
+let finishedCacheKey = "";
+let finishedCache: Record<string, number> = EMPTY_FINISHED;
+
+function readFinished(): Record<string, number> {
+  if (typeof window === "undefined") return EMPTY_FINISHED;
+  const raw = window.localStorage.getItem(FINISHED_KEY) ?? "";
+  if (raw === finishedCacheKey) return finishedCache;
+  let next = EMPTY_FINISHED;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, number>;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) next = parsed;
+    } catch {
+      next = EMPTY_FINISHED;
+    }
+  }
+  finishedCacheKey = raw;
+  finishedCache = next;
+  return next;
+}
+
+function rememberFinished(blockId: string, at: number | null) {
+  const next = { ...readFinished() };
+  if (at == null) delete next[blockId];
+  else next[blockId] = at;
+  const raw = JSON.stringify(next);
+  window.localStorage.setItem(FINISHED_KEY, raw);
+  finishedCacheKey = raw;
+  finishedCache = next;
+  stepListeners.forEach((listener) => listener());
 }
 
 function nowMs(): number {
@@ -237,37 +278,53 @@ export function StudySession({
   const current = today
     ? (todays.find(scheduled) ?? sorted.find(scheduled) ?? null)
     : null;
-  const upNext = (current ? sorted.filter((block) => block.id !== current.id && block.start >= current.start) : sorted)
-    .filter(scheduled)
-    .slice(0, 4);
-  const currentId = current?.id ?? null;
-
-  if (currentId !== timerBlockId) {
-    setTimerBlockId(currentId);
-    if (current) {
-      const minutes = blockMinutes(current);
-      const seconds = minutes * 60;
-      setDurationSec(seconds);
-      setRemainingSec(seconds);
-      setHourText(String(Math.floor(minutes / 60)));
-      setMinuteText(String(minutes % 60));
-      setElapsedSec(0);
-      setRunning(false);
-    }
+  if (timerBlockId === null && current) {
+    setTimerBlockId(current.id);
+    const minutes = blockMinutes(current);
+    const seconds = minutes * 60;
+    setDurationSec(seconds);
+    setRemainingSec(seconds);
+    setHourText(String(Math.floor(minutes / 60)));
+    setMinuteText(String(minutes % 60));
+    setElapsedSec(0);
+    setRunning(false);
   }
 
-  useEffect(() => {
-    endAtRef.current = null;
-    startAtRef.current = null;
-    elapsedBaseRef.current = 0;
-    finishedRef.current = false;
-  }, [timerBlockId]);
-
-  const steps = useSyncExternalStore(
-    subscribeSteps,
-    () => readSteps(currentId),
-    () => EMPTY_STEPS,
-  );
+  const steps = useSyncExternalStore(subscribeSteps, readSteps, () => EMPTY_STEPS);
+  const finished = useSyncExternalStore(subscribeSteps, readFinished, () => EMPTY_FINISHED);
+  const blockTasks: StudyTask[] = (today ? sorted : [])
+    .filter((block) => block.status === "scheduled" || dateOf(block.start) >= today)
+    .map((block, index) => {
+      const done = block.status !== "scheduled";
+      const minutes = Math.max(1, Math.round((new Date(block.end).getTime() - new Date(block.start).getTime()) / 60000));
+      const when = dateOf(block.start) === today ? clock(block.end) : `${dayHeading(dateOf(block.start))} ${clock(block.end)}`;
+      return {
+        id: `block:${block.id}`,
+        text: blockTitle(block, items),
+        done,
+        blockId: block.id,
+        detail: `${formatSpan(minutes * 60)}, ends ${when}`,
+        order: index,
+        finishedAt: done ? (finished[block.id] ?? index + 1) : 0,
+      };
+    });
+  const customTasks: StudyTask[] = steps.map((step, index) => ({
+    id: step.id,
+    text: step.text,
+    done: step.done,
+    blockId: null,
+    detail: "",
+    order: blockTasks.length + index,
+    finishedAt: step.finishedAt,
+  }));
+  const openBlocks = blockTasks.filter((task) => !task.done);
+  const openCustom = customTasks.filter((task) => !task.done);
+  const openTasks = openBlocks.length > 0 ? [openBlocks[0], ...openCustom, ...openBlocks.slice(1)] : openCustom;
+  const doneTasks = [...blockTasks, ...customTasks]
+    .filter((task) => task.done)
+    .sort((left, right) => left.finishedAt - right.finishedAt || left.order - right.order);
+  const tasks = [...openTasks, ...doneTasks];
+  const currentTask = openTasks[0] ?? null;
 
   function stopClock() {
     if (mode === "timer" && endAtRef.current != null) {
@@ -365,6 +422,7 @@ export function StudySession({
     stopClock();
     try {
       const updated = await markBlockStatus(current.id, "done");
+      rememberFinished(current.id, nowMs());
       setPlans((prev) =>
         prev.map((entry) => {
           if (entry.week_start !== plan?.week_start || entry.version !== plan.version) return entry;
@@ -427,19 +485,40 @@ export function StudySession({
     setNote("");
   }
 
-  function toggleStep(stepId: string) {
-    if (!currentId) return;
+  async function toggleTask(task: StudyTask) {
+    if (task.blockId) {
+      const nextStatus = task.done ? "scheduled" : "done";
+      try {
+        const updated = await markBlockStatus(task.blockId, nextStatus);
+        rememberFinished(task.blockId, nextStatus === "done" ? nowMs() : null);
+        setPlans((prev) =>
+          prev.map((entry) => {
+            if (entry.week_start !== plan?.week_start || entry.version !== plan.version) return entry;
+            return {
+              ...entry,
+              blocks: entry.blocks.map((block) => (block.id === updated.id ? { ...block, status: updated.status } : block)),
+            };
+          }),
+        );
+      } catch (err) {
+        setNote(err instanceof Error ? err.message : "Couldn't update that block.");
+      }
+      return;
+    }
     writeSteps(
-      currentId,
-      readSteps(currentId).map((step) => (step.id === stepId ? { ...step, done: !step.done } : step)),
+      readSteps().map((step) =>
+        step.id === task.id
+          ? { ...step, done: !step.done, finishedAt: step.done ? 0 : nowMs() }
+          : step,
+      ),
     );
   }
 
   function addStep(event: React.FormEvent) {
     event.preventDefault();
     const text = stepDraft.trim();
-    if (!text || !currentId) return;
-    writeSteps(currentId, [...readSteps(currentId), { id: `${Date.now()}`, text, done: false }]);
+    if (!text) return;
+    writeSteps([...readSteps(), { id: `${nowMs()}`, text, done: false, finishedAt: 0 }]);
     setStepDraft("");
   }
 
@@ -478,46 +557,25 @@ export function StudySession({
   }
 
   const shown = mode === "timer" ? remainingSec : elapsedSec;
-  const progress =
-    durationSec <= 0 ? 0 : Math.min(1, Math.max(0, mode === "timer" ? 1 - remainingSec / durationSec : elapsedSec / durationSec));
-  const radius = 154;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - progress);
-  const percent = Math.round(progress * 100);
-  const title = current ? blockTitle(current, items) : "Nothing scheduled";
+  const title = currentTask?.text ?? "Nothing scheduled";
   const todayIndex = current ? todays.findIndex((block) => block.id === current.id) : -1;
-  const meta = current
-    ? todayIndex >= 0
-      ? `Block ${todayIndex + 1} of ${todays.length} today, ends ${clock(current.end)}`
-      : `${dayHeading(dateOf(current.start))}, ends ${clock(current.end)}`
-    : "The timer still runs. It will not change the week.";
+  const meta = currentTask?.detail
+    ? currentTask.detail
+    : current
+      ? todayIndex >= 0
+        ? `Block ${todayIndex + 1} of ${todays.length} today, ends ${clock(current.end)}`
+        : `${dayHeading(dateOf(current.start))}, ends ${clock(current.end)}`
+      : "The timer still runs. It will not change the week.";
   const playlist = PLAYLISTS.find((item) => item.id === playlistId) ?? PLAYLISTS[0];
 
   return (
     <section aria-label="Study session" className="font-study text-foreground">
       <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
-        <div className="flex flex-col items-center gap-8 sm:flex-row sm:items-center sm:gap-12">
-          <div className="relative h-[260px] w-[260px] shrink-0 sm:h-[340px] sm:w-[340px]">
-            <svg viewBox="0 0 340 340" className="h-full w-full" role="img" aria-label={`Block progress, ${percent} percent`}>
-              <circle cx="170" cy="170" r={radius} fill="none" className="stroke-foreground/20" strokeWidth="1.5" />
-              <circle
-                cx="170"
-                cy="170"
-                r={radius}
-                fill="none"
-                className="stroke-foreground"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeDasharray={circumference}
-                strokeDashoffset={dashOffset}
-                transform="rotate(-90 170 170)"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="font-study-heading text-6xl font-light leading-none sm:text-8xl">{formatClock(shown)}</div>
-              <div className="mt-2.5 text-[13px] font-light text-muted-foreground">
-                {mode === "timer" ? `of ${formatSpan(durationSec)}` : `elapsed, of ${formatSpan(durationSec)}`}
-              </div>
+        <div className="flex flex-col items-start gap-8 sm:flex-row sm:items-center sm:gap-12">
+          <div className="shrink-0">
+            <div className="font-study-heading text-7xl font-light leading-none tracking-tight sm:text-8xl">{formatClock(shown)}</div>
+            <div className="mt-3 text-[13px] font-light text-muted-foreground">
+              {mode === "timer" ? `of ${formatSpan(durationSec)}` : `elapsed, of ${formatSpan(durationSec)}`}
             </div>
           </div>
 
@@ -598,62 +656,43 @@ export function StudySession({
               </button>
             </div>
 
-            <div className="mb-1 text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">This block</div>
-            {current ? (
-              <>
-                <ul className="m-0 list-none p-0">
-                  {steps.map((step) => (
-                    <li key={step.id} className="border-t border-foreground/15">
-                      <label className="flex cursor-pointer items-center gap-3 py-2.5 text-sm font-light">
-                        <input
-                          type="checkbox"
-                          checked={step.done}
-                          onChange={() => toggleStep(step.id)}
-                          className="h-[18px] w-[18px] shrink-0 accent-primary"
-                        />
-                        <span className={step.done ? "text-muted-foreground line-through" : ""}>{step.text}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-                <form onSubmit={addStep} className="flex gap-4 border-t border-foreground/15 py-2">
-                  <input
-                    value={stepDraft}
-                    onChange={(event) => setStepDraft(event.target.value)}
-                    placeholder="Add a step"
-                    aria-label="Add a step"
-                    className="min-w-0 flex-1 border-0 bg-transparent text-sm font-light text-foreground outline-none placeholder:text-muted-foreground"
-                  />
-                  <button type="submit" className={actionClass()}>
-                    Add
-                  </button>
-                </form>
-              </>
-            ) : (
+            <div className="mb-1 text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">Tasks</div>
+            {tasks.length === 0 ? (
               <p className="border-t border-foreground/15 py-3 text-sm font-light text-muted-foreground">
-                No block is linked, so checking steps stays on this page.
+                Nothing else on the week. Add a task to study it here.
               </p>
-            )}
-
-            <div className="mb-1 mt-5 text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">Up next</div>
-            {upNext.length === 0 ? (
-              <p className="border-t border-foreground/15 py-3 text-sm font-light text-muted-foreground">Nothing else on the week.</p>
             ) : (
               <ul className="m-0 list-none p-0">
-                {upNext.map((block) => {
-                  const minutes = Math.max(1, Math.round((new Date(block.end).getTime() - new Date(block.start).getTime()) / 60000));
-                  const when = dateOf(block.start) === today ? clock(block.start) : `${dayHeading(dateOf(block.start))} ${clock(block.start)}`;
-                  return (
-                    <li key={block.id} className="flex items-baseline gap-3 border-t border-foreground/15 py-2.5 text-sm font-light">
-                      <span className="min-w-0">{blockTitle(block, items)}</span>
-                      <span className="ml-auto shrink-0 text-[13px] text-muted-foreground">
-                        {formatSpan(minutes * 60)}, {when}
-                      </span>
-                    </li>
-                  );
-                })}
+                {tasks.map((task) => (
+                  <li key={task.id} className="border-t border-foreground/15">
+                    <label className="flex cursor-pointer items-center gap-3 py-2.5 text-sm font-light">
+                      <input
+                        type="checkbox"
+                        checked={task.done}
+                        onChange={() => void toggleTask(task)}
+                        className="h-[18px] w-[18px] shrink-0 accent-primary"
+                      />
+                      <span className={task.done ? "text-muted-foreground line-through" : ""}>{task.text}</span>
+                      {task.detail ? (
+                        <span className="ml-auto shrink-0 text-[13px] text-muted-foreground">{task.detail}</span>
+                      ) : null}
+                    </label>
+                  </li>
+                ))}
               </ul>
             )}
+            <form onSubmit={addStep} className="flex gap-4 border-t border-foreground/15 py-2">
+              <input
+                value={stepDraft}
+                onChange={(event) => setStepDraft(event.target.value)}
+                placeholder="Add a task"
+                aria-label="Add a task"
+                className="min-w-0 flex-1 border-0 bg-transparent text-sm font-light text-foreground outline-none placeholder:text-muted-foreground"
+              />
+              <button type="submit" className={actionClass()}>
+                Add
+              </button>
+            </form>
           </div>
         </div>
 
