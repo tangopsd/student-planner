@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getProfile, getWeeks } from "@/lib/api";
-import { formatHours, formatWhen } from "@/lib/format";
-import type { Item, Profile, Week, WeekPlan } from "@/lib/types";
+import type { Profile, Week, WeekPlan } from "@/lib/types";
 import { HoursPanel } from "@/components/hours-panel";
 import { ImportPanel } from "@/components/import-panel";
 import { ManualForm } from "@/components/manual-form";
@@ -12,15 +11,6 @@ import { WeekList } from "@/components/week-list";
 import { WeekPlanner } from "@/components/week-grid";
 import { WeekRecap } from "@/components/week-recap";
 import { Button } from "@/components/ui/button";
-
-function nextOpen(items: Item[]): Item | undefined {
-  return items
-    .filter((item) => item.status === "open")
-    .sort(
-      (left, right) =>
-        new Date(left.due_or_start).getTime() - new Date(right.due_or_start).getTime(),
-    )[0];
-}
 
 export function Desk({
   initialPlans = [],
@@ -97,10 +87,6 @@ export function Desk({
   }
 
   const items = weeks?.flatMap((week) => week.items) ?? [];
-  const openCount = items.filter((item) => item.status === "open").length;
-  const doneCount = items.filter((item) => item.status === "done").length;
-  const upcoming = nextOpen(items);
-  const upcomingWhen = upcoming ? formatWhen(upcoming.due_or_start) : null;
 
   return (
     <>
@@ -135,13 +121,6 @@ export function Desk({
                 Study
               </button>
             </nav>
-            {profile && weeks ? (
-              <p className="text-sm text-muted-foreground">
-                {openCount} open · {doneCount} done · {formatHours(profile.daily_capacity_hours)}h a
-                day
-                {upcomingWhen ? ` · Next ${upcomingWhen.weekday}, ${upcomingWhen.date}` : ""}
-              </p>
-            ) : null}
           </div>
         </header>
 
