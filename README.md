@@ -25,6 +25,8 @@ npm run dev
 
 Open [http://127.0.0.1:8742](http://127.0.0.1:8742). The dev server proxies `/api` to port 8741.
 
+Home is a month calendar. Deadlines and planned blocks land on their days. With nothing saved yet, the grid is still there, just empty. Week and Study stay in the top right.
+
 After the venv and `npm install`, `./scripts/dev.sh` starts both.
 
 If you have no feed yet, use **Load sample calendar** or **Add by hand**.

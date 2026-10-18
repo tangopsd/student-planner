@@ -9,8 +9,38 @@ import { ManualForm } from "@/components/manual-form";
 import { StudySession } from "@/components/study-session";
 import { WeekList } from "@/components/week-list";
 import { WeekPlanner } from "@/components/week-grid";
+import { MonthCalendar } from "@/components/month-calendar";
 import { WeekRecap } from "@/components/week-recap";
 import { Button } from "@/components/ui/button";
+
+function ViewNav({
+  view,
+  onView,
+}: {
+  view: "home" | "week" | "study";
+  onView: (view: "week" | "study") => void;
+}) {
+  return (
+    <nav aria-label="Views" className="flex gap-5 text-sm">
+      <button
+        type="button"
+        aria-current={view === "week" ? "page" : undefined}
+        onClick={() => onView("week")}
+        className={`border-b-[1.5px] px-0.5 py-1.5 ${view === "week" ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground"}`}
+      >
+        Week
+      </button>
+      <button
+        type="button"
+        aria-current={view === "study" ? "page" : undefined}
+        onClick={() => onView("study")}
+        className={`border-b-[1.5px] px-0.5 py-1.5 ${view === "study" ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground"}`}
+      >
+        Study
+      </button>
+    </nav>
+  );
+}
 
 export function Desk({
   initialPlans = [],
@@ -30,7 +60,7 @@ export function Desk({
   const [profileVersion, setProfileVersion] = useState(0);
   const [loading, setLoading] = useState(initialWeeks === null && !initialDeskError);
   const [error, setError] = useState<string | null>(initialDeskError);
-  const [view, setView] = useState<"week" | "study">("week");
+  const [view, setView] = useState<"home" | "week" | "study">("home");
   const [plans, setPlans] = useState(initialPlans);
 
   function takePlan(plan: WeekPlan) {
@@ -92,37 +122,43 @@ export function Desk({
     <>
       <div className="h-1.5 bg-primary" />
       <main className={`mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 md:px-8 ${view === "study" ? "py-4" : "py-8"}`}>
-        <header className={`flex flex-col gap-4 md:flex-row md:items-end md:justify-between ${view === "study" ? "mb-4" : "mb-8"}`}>
-          <div>
-            <p className="font-study text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              Focus
-            </p>
-            <h1 className="font-study-heading text-4xl font-light italic leading-none sm:text-5xl">Quill</h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
-              Import a Canvas feed, then plan the week around the deadlines already on the desk.
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-3 md:items-end">
-            <nav aria-label="Views" className="flex gap-5 text-sm">
+        {view === "home" ? (
+          <header className="mb-8 flex items-start justify-between gap-4">
+            <p className="font-study text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Home</p>
+            <ViewNav view={view} onView={setView} />
+          </header>
+        ) : (
+          <header className={`flex flex-col gap-4 md:flex-row md:items-end md:justify-between ${view === "study" ? "mb-4" : "mb-8"}`}>
+            <div>
+              <p className="font-study text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Focus
+              </p>
               <button
                 type="button"
-                aria-current={view === "week" ? "page" : undefined}
-                onClick={() => setView("week")}
-                className={`border-b-[1.5px] px-0.5 py-1.5 ${view === "week" ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground"}`}
+                onClick={() => setView("home")}
+                className="bg-transparent p-0 text-left font-study-heading text-4xl font-light italic leading-none text-foreground sm:text-5xl"
               >
-                Week
+                Quill
               </button>
-              <button
-                type="button"
-                aria-current={view === "study" ? "page" : undefined}
-                onClick={() => setView("study")}
-                className={`border-b-[1.5px] px-0.5 py-1.5 ${view === "study" ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground"}`}
-              >
-                Study
-              </button>
-            </nav>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
+                Import a Canvas feed, then plan the week around the deadlines already on the desk.
+              </p>
+            </div>
+            <div className="flex flex-col items-start gap-3 md:items-end">
+              <ViewNav view={view} onView={setView} />
+            </div>
+          </header>
+        )}
+
+        <div className={view === "home" ? "mb-10" : "hidden"}>
+          <h1 className="font-study-heading text-6xl font-light italic leading-none sm:text-7xl">Quill</h1>
+          <p className="mt-3 font-study text-sm text-muted-foreground sm:text-base">
+            Your week, rebuilt around your real life.
+          </p>
+          <div className="mt-10">
+            <MonthCalendar items={items} plans={plans} />
           </div>
-        </header>
+        </div>
 
         {error ? (
           <div role="alert" className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 bg-card px-4 py-3 text-sm">
