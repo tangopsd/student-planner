@@ -59,10 +59,12 @@ export function WeekPlanner({
   items,
   initialPlans,
   initialPlanError,
+  onPlan,
 }: {
   items: Item[];
   initialPlans: WeekPlan[];
   initialPlanError: string | null;
+  onPlan?: (plan: WeekPlan) => void;
 }) {
   const starting = latestPlan(initialPlans);
   const [plan, setPlan] = useState<WeekPlan | null>(starting);
@@ -90,7 +92,10 @@ export function WeekPlanner({
       setReply(turn.reply);
       setToolCalls(turn.tool_calls ?? []);
       setDebug(JSON.stringify(turn, null, 2));
-      if (turn.plan) setPlan(turn.plan);
+      if (turn.plan) {
+        setPlan(turn.plan);
+        onPlan?.(turn.plan);
+      }
       if (turn.errors?.length) setError(turn.errors.join(" "));
       else if (!turn.valid) setError(turn.reply || "The planner could not update the week.");
       else setError(null);

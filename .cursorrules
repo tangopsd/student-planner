@@ -42,3 +42,5 @@ The validator rejects overlaps, blocks outside waking hours, study and personal 
 The weekly plan is changed by typing a request and pressing Send. A move updates an existing block. A new commitment calls `add_item`, then a fixed block for an event or a study block for homework. Delete, remove, and cancel call `delete_block` and the weekly view drops that block. A locked exam is left in place. After Send, the page shows the tool calls and the short explanation beside the updated week. There is no microphone, mic toggle, Plan this week button, or Reload saved plan button.
 
 The Study tab keeps the same header and runs a client-side timer or stopwatch. It shows the current plan block, a checklist, what is up next, and a Spotify playlist embed. When the timer finishes or the student marks the block done, `POST /api/blocks/{id}/status` sets that block to done.
+
+The week view includes a recap card for the current week: blocks marked done against the plan, a streak of consecutive days with a finished block when that history exists, and the heaviest day. Download or copy makes a picture of the card. It does not invent a streak.

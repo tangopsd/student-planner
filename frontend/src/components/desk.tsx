@@ -10,6 +10,7 @@ import { ManualForm } from "@/components/manual-form";
 import { StudySession } from "@/components/study-session";
 import { WeekList } from "@/components/week-list";
 import { WeekPlanner } from "@/components/week-grid";
+import { WeekRecap } from "@/components/week-recap";
 import { Button } from "@/components/ui/button";
 
 function nextOpen(items: Item[]): Item | undefined {
@@ -40,6 +41,14 @@ export function Desk({
   const [loading, setLoading] = useState(initialWeeks === null && !initialDeskError);
   const [error, setError] = useState<string | null>(initialDeskError);
   const [view, setView] = useState<"week" | "study">("week");
+  const [plans, setPlans] = useState(initialPlans);
+
+  function takePlan(plan: WeekPlan) {
+    setPlans((prev) => {
+      const rest = prev.filter((entry) => !(entry.week_start === plan.week_start && entry.version === plan.version));
+      return [...rest, plan];
+    });
+  }
 
   function refreshWeeks() {
     return getWeeks().then((weekBody) => {
@@ -155,10 +164,15 @@ export function Desk({
         </div>
 
         <div className={view === "week" ? "mb-6" : "hidden"}>
+          <WeekRecap plans={plans} active={view === "week"} onPlans={setPlans} />
+        </div>
+
+        <div className={view === "week" ? "mb-6" : "hidden"}>
           <WeekPlanner
             items={items}
             initialPlans={initialPlans}
             initialPlanError={initialPlanError}
+            onPlan={takePlan}
           />
         </div>
 
