@@ -80,7 +80,7 @@ def plan_week(
     if model is None and not os.environ.get("GEMINI_API_KEY", "").strip():
         from planning.local_plan import plan_locally
 
-        return plan_locally(store, target)
+        return plan_locally(store, target, text)
     if model is None:
         model = GoogleGeminiModel()
 

@@ -524,6 +524,46 @@ def test_missing_api_key_schedules_existing_items(tmp_path, monkeypatch):
     assert [block.id for block in again["plan"].blocks] == [block.id for block in blocks]
 
 
+def test_reschedule_request_moves_the_matching_block(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    store.add_item(make_item())
+    first = plan_week(store, "Plan the week", week_start="2026-10-19")
+    original = next(block for block in first["plan"].blocks if block.item_id == "hw-1")
+    moved = plan_week(store, "move HW1 to Wednesday", week_start="2026-10-19")
+    assert moved["valid"] is True, moved["errors"]
+    block = next(row for row in moved["plan"].blocks if row.item_id == "hw-1")
+    assert block.id == original.id
+    assert block.start.startswith("2026-10-21")
+    assert "Wednesday" in moved["message"]
+    assert store.items()[0].due_or_start == "2026-10-23T18:00:00-07:00"
+
+
+def test_review_request_adds_a_block_without_moving_the_exam(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    store = Store(tmp_path / "state.json")
+    exam = make_item(
+        id="exam-1",
+        title="Midterm Exam",
+        type="exam",
+        locked=True,
+        estimated_effort_hours=None,
+        due_or_start="2026-10-26T15:30:00-07:00",
+    )
+    store.add_item(exam)
+    store.add_item(make_item())
+    plan_week(store, "Plan the week", week_start="2026-10-19")
+    result = plan_week(store, "move my midterm review to Wednesday", week_start="2026-10-19")
+    assert result["valid"] is True, result["errors"]
+    reviews = [block for block in result["plan"].blocks if block.item_id == "exam-1"]
+    assert len(reviews) == 1
+    assert reviews[0].kind == "study"
+    assert reviews[0].start.startswith("2026-10-21")
+    stored = {item.id: item for item in store.items()}
+    assert stored["exam-1"].locked is True
+    assert stored["exam-1"].due_or_start == exam.due_or_start
+
+
 def test_gemini_endpoint_keeps_items_without_a_key(client, monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     created = client.post(

@@ -101,8 +101,8 @@ export function WeekPlanner({
     if (turn.plan) setPlan(turn.plan);
     if (turn.errors?.length) {
       setError(turn.errors.join(" "));
-    } else if (turn.plan && !turn.valid) {
-      setError(turn.reply || "The planner returned a plan that failed its checks.");
+    } else if (!turn.valid) {
+      setError(turn.reply || "The planner could not update the week.");
     } else {
       setError(null);
     }

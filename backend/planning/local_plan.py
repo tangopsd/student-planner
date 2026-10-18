@@ -6,18 +6,64 @@ Used when GEMINI_API_KEY is not set, so Plan this week still returns blocks.
 from __future__ import annotations
 
 import math
+import re
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 
 from ical_parser import LOCAL_TZ
-from models import Block, Item, Profile
+from models import Block, Item, Plan, Profile
 from planning.validator import validate_week
-from store import Store
+from store import Store, StoreError
 
 DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+WEEKDAY_INDEX = {
+    "monday": 0,
+    "mon": 0,
+    "tuesday": 1,
+    "tue": 1,
+    "tues": 1,
+    "wednesday": 2,
+    "wed": 2,
+    "thursday": 3,
+    "thu": 3,
+    "thur": 3,
+    "thurs": 3,
+    "friday": 4,
+    "fri": 4,
+    "saturday": 5,
+    "sat": 5,
+    "sunday": 6,
+    "sun": 6,
+}
+STOP_WORDS = {
+    "a",
+    "an",
+    "the",
+    "my",
+    "to",
+    "on",
+    "for",
+    "please",
+    "can",
+    "you",
+    "move",
+    "reschedule",
+    "shift",
+    "push",
+    "put",
+    "place",
+    "schedule",
+    "block",
+    "session",
+    "this",
+    "week",
+    "review",
+    "study",
+}
 
 
-def plan_locally(store: Store, week_start: str) -> dict:
+def plan_locally(store: Store, week_start: str, request: str = "") -> dict:
     items = store.items()
     original_ids = {item.id for item in items}
     locked_baseline = {item.id: item.due_or_start for item in items if item.locked}
@@ -29,6 +75,9 @@ def plan_locally(store: Store, week_start: str) -> dict:
         locked_baseline,
         original_ids,
     )
+    rescheduled = _reschedule(store, week_start, request, existing)
+    if rescheduled is not None:
+        return rescheduled
     if existing is not None and existing.blocks:
         return {
             "week_start": week_start,
@@ -70,6 +119,163 @@ def plan_locally(store: Store, week_start: str) -> dict:
         "attempts": 1,
         "message": message,
     }
+
+
+def _reschedule(store: Store, week_start: str, request: str, existing: Plan | None) -> dict | None:
+    """Move or add one block when the request names a weekday. Otherwise leave planning alone."""
+    day_index = _target_weekday(request)
+    if day_index is None:
+        return None
+    items = store.items()
+    item = _match_item(items, request)
+    if item is None:
+        return _refused(store, week_start, "Say which deadline to move, and which day.")
+    target_day = date.fromisoformat(week_start) + timedelta(days=day_index)
+    blocks = [] if existing is None else list(existing.blocks)
+    linked = [block for block in blocks if block.item_id == item.id]
+    study = [block for block in linked if block.kind in ("study", "personal")]
+    wants_review = bool({"review", "study"} & set(_words(request)))
+    if study:
+        chosen = study[0]
+        placed = _place(store.profile(), existing, target_day, chosen.id, _local(chosen.start), _local(chosen.end) - _local(chosen.start))
+        if placed is None:
+            return _refused(store, week_start, f"{DAY_NAMES[day_index]} is full during waking hours.")
+        start, end = placed
+        summary = f"Moved {item.title} to {DAY_NAMES[day_index]}"
+        try:
+            store.move_block(chosen.id, start.isoformat(), end.isoformat(), summary, datetime.now(LOCAL_TZ).isoformat())
+        except StoreError as exc:
+            return _refused(store, week_start, str(exc))
+        message = f"Moved {item.title} to {DAY_NAMES[day_index]}, {_clock(start)}–{_clock(end)}."
+    elif wants_review or not linked:
+        if item.locked and not wants_review and linked:
+            return _refused(store, week_start, f"{item.title} is locked, so its time stays put.")
+        placed = _place(store.profile(), existing, target_day, None, None, timedelta(hours=1))
+        if placed is None:
+            return _refused(store, week_start, f"{DAY_NAMES[day_index]} is full during waking hours.")
+        start, end = placed
+        block = _block(item, start, end, "personal" if item.type == "personal" else "study")
+        summary = f"Added a review for {item.title} on {DAY_NAMES[day_index]}"
+        try:
+            store.create_blocks(week_start, [block], summary, datetime.now(LOCAL_TZ).isoformat())
+        except StoreError as exc:
+            return _refused(store, week_start, str(exc))
+        message = f"Added a review for {item.title} on {DAY_NAMES[day_index]}, {_clock(start)}–{_clock(end)}."
+    else:
+        return _refused(store, week_start, f"{item.title} is locked, so its time stays put.")
+    plan = store.latest_plan(week_start)
+    original_ids = {row.id for row in store.items()}
+    locked_baseline = {row.id: row.due_or_start for row in store.items() if row.locked}
+    errors = validate_week(store.profile(), store.items(), plan, locked_baseline, original_ids)
+    if errors:
+        try:
+            store.undo()
+        except StoreError:
+            pass
+        plan = store.latest_plan(week_start)
+        return {
+            "week_start": week_start,
+            "plan": plan,
+            "valid": False,
+            "errors": errors,
+            "attempts": 1,
+            "message": " ".join(errors),
+        }
+    return {
+        "week_start": week_start,
+        "plan": plan,
+        "valid": True,
+        "errors": [],
+        "attempts": 1,
+        "message": message,
+    }
+
+
+def _refused(store: Store, week_start: str, message: str) -> dict:
+    return {
+        "week_start": week_start,
+        "plan": store.latest_plan(week_start),
+        "valid": False,
+        "errors": [message],
+        "attempts": 1,
+        "message": message,
+    }
+
+
+def _target_weekday(request: str) -> int | None:
+    found = None
+    for word in _words(request):
+        if word in WEEKDAY_INDEX:
+            found = WEEKDAY_INDEX[word]
+    return found
+
+
+def _words(request: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", request.lower())
+
+
+def _match_item(items: list[Item], request: str) -> Item | None:
+    wanted = [word for word in _words(request) if word not in STOP_WORDS and word not in WEEKDAY_INDEX]
+    if not wanted:
+        return None
+    best: Item | None = None
+    best_score = 0
+    for item in items:
+        title_words = set(_words(item.title))
+        score = 0
+        for word in wanted:
+            if word in title_words:
+                score += len(word)
+            elif len(word) >= 3 and any(word in part or part in word for part in title_words if len(part) >= 3):
+                score += len(word)
+        if score > best_score:
+            best = item
+            best_score = score
+    return best
+
+
+def _place(
+    profile: Profile,
+    plan,
+    day: date,
+    skip_id: str | None,
+    preferred: datetime | None,
+    duration: timedelta,
+) -> tuple[datetime, datetime] | None:
+    occupied = _commitments(profile, day)
+    if plan is not None:
+        for block in plan.blocks:
+            if skip_id is not None and block.id == skip_id:
+                continue
+            start = _local(block.start)
+            if start.date() != day:
+                continue
+            occupied.append((start, _local(block.end)))
+    wake = _on_clock(day, profile.waking_hours.wake)
+    sleep = _on_clock(day, profile.waking_hours.sleep)
+    if preferred is not None:
+        start = _on_clock(day, f"{preferred.hour:02d}:{preferred.minute:02d}")
+        end = start + duration
+        if wake <= start and end <= sleep and not _overlaps(start, end, occupied):
+            return start, end
+    if duration == timedelta(hours=1):
+        for start, end in reversed(_slots(day, profile)):
+            if not _overlaps(start, end, occupied):
+                return start, end
+        return None
+    cursor = sleep - duration
+    while cursor >= wake:
+        end = cursor + duration
+        if end <= sleep and not _overlaps(cursor, end, occupied):
+            return cursor, end
+        cursor -= timedelta(minutes=30)
+    return None
+
+
+def _clock(moment: datetime) -> str:
+    hour = moment.hour % 12 or 12
+    suffix = "AM" if moment.hour < 12 else "PM"
+    return f"{hour}:{moment.minute:02d} {suffix}"
 
 
 def propose_blocks(profile: Profile, items: list[Item], week_start: str) -> list[Block]:

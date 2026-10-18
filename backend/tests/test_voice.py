@@ -82,6 +82,30 @@ def test_audio_sends_the_transcript_to_the_planner(client, monkeypatch):
     assert body["reply"] == "Moved it."
 
 
+def test_typed_reschedule_updates_the_saved_week(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    client.post(
+        "/api/items",
+        json={"title": "HW1", "type": "assignment", "due_or_start": "2026-10-23T18:00"},
+    )
+    planned = client.post(
+        "/api/plan/gemini",
+        json={"request": "Plan the week", "week_start": "2026-10-19"},
+    )
+    assert planned.status_code == 200
+    response = client.post(
+        "/api/voice",
+        json={"text": "move HW1 to Wednesday", "week_start": "2026-10-19"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["transcript"] == "move HW1 to Wednesday"
+    assert body["valid"] is True, body["errors"]
+    assert "Wednesday" in body["reply"]
+    assert body["plan"]["blocks"][0]["start"].startswith("2026-10-21")
+    assert len(client.get("/api/items").json()) == 1
+
+
 def test_empty_text_is_rejected(client):
     response = client.post("/api/voice", json={"text": "   "})
     assert response.status_code == 400
